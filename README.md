@@ -20,7 +20,7 @@ A meal planning app for a **single user** on **Android** (sideloaded APK). The u
   Friday/Saturday: PLAN
   ┌────────────────────────────────────────────────────────────────────┐
   │  1. User taps "Generate Meal Plan"                                 │
-  │  2. App queries recipe dataset (5000+ recipes in IndexedDB)        │
+  │  2. App queries recipe dataset (20000+ recipes in IndexedDB)       │
   │  3. Scores recipes by: pantry matches, learned preferences,        │
   │     cuisine/protein diversity, avoiding recent recipes             │
   │  4. Presents 24 diverse options                                    │
@@ -82,7 +82,8 @@ A meal planning app for a **single user** on **Android** (sideloaded APK). The u
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         Static Data (public/)                            │
-│  public/data/recipes-dinner.json   5000 dinner recipes (~17MB)          │
+│  public/data/recipes.json   20000 meal recipes (~60MB)                  │
+│  Categories: dinner, lunch, side, soup, salad                           │
 │  Loaded into IndexedDB on first app open                                │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -151,7 +152,7 @@ A meal planning app for a **single user** on **Android** (sideloaded APK). The u
 | File                  | Purpose |
 |-----------------------|---------|
 | `import-recipes.ts`   | Parse Food.com CSV → JSON |
-|                       | `npm run import:recipes:dinner` → public/data/recipes-dinner.json |
+|                       | `npm run import:recipes:meals` → public/data/recipes.json |
 
 ---
 
@@ -271,7 +272,7 @@ Unit system preference is passed to Gemini for shopping list consolidation, ensu
 
 ### Current State (Working)
 
-- [x] Recipe dataset import (5000 dinner recipes)
+- [x] Recipe dataset import (20000 meal recipes: dinner, lunch, side, soup, salad)
 - [x] Dataset-based recipe pool generation
 - [x] Recipe selection UI (24 options → pick 6)
 - [x] Shopping list generation with unit conversion
@@ -317,7 +318,7 @@ npm install
 npm run dev
 
 # Import recipe dataset (required for first run)
-npm run import:recipes:dinner
+npm run import:recipes:meals
 
 # Build for production
 npm run build
@@ -331,8 +332,8 @@ npx cap sync android
 ```
 Food.com CSV (576K recipes)
     │
-    ▼ npm run import:recipes:dinner
-    │ (filters to "dinner" category, limit 10000)
+    ▼ npm run import:recipes:meals
+    │ (filters to dinner, lunch, side, soup, salad categories, limit 20000)
     │
     ▼ parseIngredientString()
     │ "1 (14 ounce) can diced tomatoes" → {qty: 14, unit: "oz", name: "canned diced tomatoes"}
@@ -340,7 +341,7 @@ Food.com CSV (576K recipes)
     ▼ normalizeIngredientName()
     │ "garlic cloves" → "garlic"
     │
-    ▼ public/data/recipes-dinner.json (5000 recipes, ~17MB)
+    ▼ public/data/recipes.json (20000 recipes, ~60MB)
     │
     ▼ Loaded into IndexedDB on app open
 ```
@@ -368,7 +369,7 @@ Without Gemini key:
 d:\Shopping App\
 ├── public/
 │   └── data/
-│       └── recipes-dinner.json    # Recipe dataset
+│       └── recipes.json           # Recipe dataset (dinner, lunch, side, soup, salad)
 ├── scripts/
 │   └── import-recipes.ts          # CSV → JSON converter
 ├── src/

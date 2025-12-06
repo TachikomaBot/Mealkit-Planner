@@ -747,6 +747,10 @@ async function main() {
   let limit: number | undefined;
   let outputPath: string | undefined;
   let categoryFilter: string | undefined;
+  let categoryList: string[] | undefined;
+
+  // Predefined category sets
+  const MEAL_CATEGORIES = ['dinner', 'lunch', 'side', 'soup', 'salad'];
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -756,6 +760,15 @@ async function main() {
       limit = parseInt(args[++i]);
     } else if (arg === '--category' || arg === '-c') {
       categoryFilter = args[++i];
+      // Support "meals" as shorthand for all meal-related categories
+      if (categoryFilter === 'meals') {
+        categoryList = MEAL_CATEGORIES;
+        categoryFilter = undefined;
+      } else if (categoryFilter.includes(',')) {
+        // Support comma-separated list
+        categoryList = categoryFilter.split(',').map(c => c.trim());
+        categoryFilter = undefined;
+      }
     } else if (!arg.startsWith('-')) {
       if (!filePath || filePath === 'recipes_w_search_terms.csv') {
         filePath = arg;
@@ -768,19 +781,18 @@ async function main() {
   console.log(`Importing recipes from: ${filePath}`);
   if (limit) console.log(`Limit: ${limit} recipes`);
   if (categoryFilter) console.log(`Category filter: ${categoryFilter}`);
+  if (categoryList) console.log(`Category list: ${categoryList.join(', ')}`);
   if (outputPath) console.log(`Output: ${outputPath}`);
 
   const startTime = Date.now();
 
   // Build comprehensive filter
   const recipeFilter = (recipe: ImportedRecipe): boolean => {
-    // Category filter (e.g., "dinner")
+    // Category filter - single category or list of categories
     if (categoryFilter && recipe.category !== categoryFilter) {
       return false;
     }
-
-    // Exclude side dishes (category detected from original tags)
-    if (recipe.category === 'side') {
+    if (categoryList && (!recipe.category || !categoryList.includes(recipe.category))) {
       return false;
     }
 

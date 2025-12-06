@@ -11,6 +11,7 @@
     "import:recipes": "npx tsx scripts/import-recipes.ts",
     "import:recipes:test": "npx tsx scripts/import-recipes.ts recipes_w_search_terms.csv 100",
     "import:recipes:dinner": "npx tsx scripts/import-recipes.ts -c dinner -l 10000 -o public/data/recipes-dinner.json",
+    "import:recipes:meals": "npx tsx scripts/import-recipes.ts -c meals -l 20000 -o public/data/recipes.json",
     "import:recipes:all": "npx tsx scripts/import-recipes.ts -l 50000 -o public/data/recipes.json"
   },
   "dependencies": {

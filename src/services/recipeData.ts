@@ -66,9 +66,9 @@ async function loadRecipeData(): Promise<void> {
 
   try {
     // Try to load from public data folder
-    const response = await fetch('/data/recipes-dinner.json');
+    const response = await fetch('/data/recipes.json');
     if (!response.ok) {
-      console.warn('Recipe data not found. Run "npm run import:recipes:dinner" to generate.');
+      console.warn('Recipe data not found. Run "npm run import:recipes:meals" to generate.');
       return;
     }
 
