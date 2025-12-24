@@ -1,6 +1,13 @@
 package com.mealplanner.presentation.navigation
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.ui.unit.dp
@@ -96,95 +103,105 @@ fun MainScreen() {
     val navController = rememberNavController()
     val json = Json { ignoreUnknownKeys = true }
 
-    Scaffold(
-        bottomBar = {
-            BottomNavigationBar(navController = navController)
-        }
-    ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = BottomNavTab.Home.route,
-            modifier = Modifier.padding(innerPadding)
+    // Alternative layout: simpler Column instead of Scaffold
+    Column(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // Main content area
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .consumeWindowInsets(WindowInsets.navigationBars)
         ) {
-            // Tab destinations
-            composable(BottomNavTab.Home.route) {
-                HomeScreen(
-                    onNavigateToMeals = {
-                        navController.navigate(BottomNavTab.Meals.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
+            NavHost(
+                navController = navController,
+                startDestination = BottomNavTab.Home.route,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                // Tab destinations
+                composable(BottomNavTab.Home.route) {
+                    HomeScreen(
+                        onNavigateToMeals = {
+                            navController.navigate(BottomNavTab.Meals.route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
                             }
-                            launchSingleTop = true
-                            restoreState = true
+                        },
+                        onNavigateToShopping = {
+                            navController.navigate(AppScreen.Shopping.route)
+                        },
+                        onNavigateToSettings = {
+                            navController.navigate(AppScreen.Settings.route)
+                        },
+                        onRecipeClick = { recipe ->
+                            navController.navigate(AppScreen.RecipeDetail.createRoute(recipe, json))
                         }
-                    },
-                    onNavigateToShopping = {
-                        navController.navigate(AppScreen.Shopping.route)
-                    },
-                    onNavigateToSettings = {
-                        navController.navigate(AppScreen.Settings.route)
-                    },
-                    onRecipeClick = { recipe ->
-                        navController.navigate(AppScreen.RecipeDetail.createRoute(recipe, json))
-                    }
-                )
-            }
+                    )
+                }
 
-            composable(BottomNavTab.Pantry.route) {
-                PantryScreen()
-            }
+                composable(BottomNavTab.Pantry.route) {
+                    PantryScreen()
+                }
 
-            composable(BottomNavTab.Meals.route) {
-                MealPlanScreen(
-                    onNavigateToShopping = {
-                        navController.navigate(AppScreen.Shopping.route)
-                    },
-                    onNavigateToSettings = {
-                        navController.navigate(AppScreen.Settings.route)
-                    },
-                    onRecipeClick = { recipe ->
-                        navController.navigate(AppScreen.RecipeDetail.createRoute(recipe, json))
-                    }
-                )
-            }
+                composable(BottomNavTab.Meals.route) {
+                    MealPlanScreen(
+                        onNavigateToShopping = {
+                            navController.navigate(AppScreen.Shopping.route)
+                        },
+                        onNavigateToSettings = {
+                            navController.navigate(AppScreen.Settings.route)
+                        },
+                        onRecipeClick = { recipe ->
+                            navController.navigate(AppScreen.RecipeDetail.createRoute(recipe, json))
+                        }
+                    )
+                }
 
-            composable(BottomNavTab.Profile.route) {
-                ProfileScreen()
-            }
+                composable(BottomNavTab.Profile.route) {
+                    ProfileScreen()
+                }
 
-            // Full-screen destinations (overlay on tabs)
-            composable(AppScreen.Shopping.route) {
-                ShoppingScreen(
-                    onBack = { navController.popBackStack() },
-                    onNavigateToMealPlan = {
-                        navController.navigate(BottomNavTab.Meals.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
+                // Full-screen destinations (overlay on tabs)
+                composable(AppScreen.Shopping.route) {
+                    ShoppingScreen(
+                        onBack = { navController.popBackStack() },
+                        onNavigateToMealPlan = {
+                            navController.navigate(BottomNavTab.Meals.route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
                             }
-                            launchSingleTop = true
-                            restoreState = true
                         }
-                    }
-                )
-            }
+                    )
+                }
 
-            composable(AppScreen.Settings.route) {
-                SettingsScreen(
-                    onBack = { navController.popBackStack() }
-                )
-            }
+                composable(AppScreen.Settings.route) {
+                    SettingsScreen(
+                        onBack = { navController.popBackStack() }
+                    )
+                }
 
-            composable(AppScreen.RecipeDetail.route) { backStackEntry ->
-                val recipeJson = backStackEntry.arguments?.getString("recipeJson") ?: return@composable
-                val decodedBytes = Base64.decode(recipeJson, Base64.URL_SAFE)
-                val decoded = String(decodedBytes, Charsets.UTF_8)
-                val recipeArg = json.decodeFromString(RecipeNavArg.serializer(), decoded)
-                RecipeDetailScreen(
-                    recipe = recipeArg.toRecipe(),
-                    onBack = { navController.popBackStack() }
-                )
+                composable(AppScreen.RecipeDetail.route) { backStackEntry ->
+                    val recipeJson = backStackEntry.arguments?.getString("recipeJson") ?: return@composable
+                    val decodedBytes = Base64.decode(recipeJson, Base64.URL_SAFE)
+                    val decoded = String(decodedBytes, Charsets.UTF_8)
+                    val recipeArg = json.decodeFromString(RecipeNavArg.serializer(), decoded)
+                    RecipeDetailScreen(
+                        recipe = recipeArg.toRecipe(),
+                        onBack = { navController.popBackStack() }
+                    )
+                }
             }
         }
+
+        // Bottom Navigation Bar
+        BottomNavigationBar(navController = navController)
     }
 }
 
@@ -202,7 +219,6 @@ private fun BottomNavigationBar(navController: NavHostController) {
         NavigationBar(
             containerColor = MaterialTheme.colorScheme.surface,
             contentColor = MaterialTheme.colorScheme.onSurface,
-
             tonalElevation = 0.dp
         ) {
             bottomNavTabs.forEach { tab ->
