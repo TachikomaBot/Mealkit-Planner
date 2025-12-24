@@ -109,7 +109,7 @@ class MealPlanViewModel @Inject constructor(
                             val currentViewMode = (_uiState.value as? MealPlanUiState.ActivePlan)?.viewMode ?: ViewMode.PRIMARY
                             _uiState.value = MealPlanUiState.ActivePlan(plan, currentViewMode)
                         } else {
-                            checkApiKeyAndSetEmpty()
+                            setEmpty()
                         }
                     }
                 }
@@ -125,9 +125,8 @@ class MealPlanViewModel @Inject constructor(
         }
     }
 
-    private suspend fun checkApiKeyAndSetEmpty() {
-        val hasKey = preferencesUseCase.hasApiKey()
-        _uiState.value = if (hasKey) MealPlanUiState.Empty else MealPlanUiState.NoApiKey
+    private fun setEmpty() {
+        _uiState.value = MealPlanUiState.Empty
     }
 
     fun startBrowsing() {
@@ -208,31 +207,22 @@ class MealPlanViewModel @Inject constructor(
             if (plan != null) {
                 _uiState.value = MealPlanUiState.ActivePlan(plan)
             } else {
-                checkApiKeyAndSetEmpty()
+                setEmpty()
             }
         }
     }
 
     fun generateMealPlan() {
-        viewModelScope.launch {
-            // Check API key first
-            val hasKey = preferencesUseCase.hasApiKey()
-            if (!hasKey) {
-                _uiState.value = MealPlanUiState.Error("Gemini API key not configured. Go to Profile to add your key.")
-                return@launch
-            }
-
-            // Start the foreground service for generation
-            _uiState.value = MealPlanUiState.Generating
-            _generationProgress.value = null
-            MealGenerationService.startGeneration(context)
-        }
+        // Start the foreground service for generation (API key is on backend)
+        _uiState.value = MealPlanUiState.Generating
+        _generationProgress.value = null
+        MealGenerationService.startGeneration(context)
     }
 
     fun cancelGeneration() {
         MealGenerationService.cancelGeneration(context)
         viewModelScope.launch {
-            checkApiKeyAndSetEmpty()
+            setEmpty()
         }
     }
 
@@ -325,7 +315,7 @@ class MealPlanViewModel @Inject constructor(
         if (plan != null) {
             _uiState.value = MealPlanUiState.ActivePlan(plan, ViewMode.PRIMARY)
         } else {
-            checkApiKeyAndSetEmpty()
+            setEmpty()
         }
     }
 
@@ -341,13 +331,13 @@ class MealPlanViewModel @Inject constructor(
 
     fun startNewPlan() {
         viewModelScope.launch {
-            checkApiKeyAndSetEmpty()
+            setEmpty()
         }
     }
 
     fun dismissError() {
         viewModelScope.launch {
-            checkApiKeyAndSetEmpty()
+            setEmpty()
         }
     }
 
@@ -355,7 +345,7 @@ class MealPlanViewModel @Inject constructor(
         viewModelScope.launch {
             _generationProgress.value = null
             _browseState.value = BrowseState()
-            checkApiKeyAndSetEmpty()
+            setEmpty()
         }
     }
 
@@ -365,7 +355,7 @@ class MealPlanViewModel @Inject constructor(
             if (plan != null) {
                 _uiState.value = MealPlanUiState.ActivePlan(plan)
             } else {
-                checkApiKeyAndSetEmpty()
+                setEmpty()
             }
         }
     }
@@ -400,7 +390,6 @@ class MealPlanViewModel @Inject constructor(
 sealed class MealPlanUiState {
     data object Loading : MealPlanUiState()
     data object Empty : MealPlanUiState()
-    data object NoApiKey : MealPlanUiState()
     data object Generating : MealPlanUiState()
     data object Browsing : MealPlanUiState()
     data class SelectingRecipes(

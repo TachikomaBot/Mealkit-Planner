@@ -6,7 +6,6 @@ import com.mealplanner.domain.model.MealPlan
 import com.mealplanner.domain.model.PlannedRecipe
 import com.mealplanner.domain.repository.MealPlanRepository
 import com.mealplanner.domain.repository.PantryRepository
-import com.mealplanner.domain.usecase.ManagePreferencesUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -19,8 +18,7 @@ import javax.inject.Inject
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val mealPlanRepository: MealPlanRepository,
-    private val pantryRepository: PantryRepository,
-    private val preferencesUseCase: ManagePreferencesUseCase
+    private val pantryRepository: PantryRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -28,7 +26,6 @@ class HomeViewModel @Inject constructor(
 
     init {
         observeMealPlan()
-        observePreferences()
         observePantryCount()
     }
 
@@ -37,19 +34,6 @@ class HomeViewModel @Inject constructor(
             mealPlanRepository.observeCurrentMealPlan()
                 .collect { mealPlan ->
                     _uiState.update { it.copy(mealPlan = mealPlan) }
-                }
-        }
-    }
-
-    private fun observePreferences() {
-        viewModelScope.launch {
-            preferencesUseCase.observePreferences()
-                .collect { prefs ->
-                    _uiState.update {
-                        it.copy(
-                            apiKeyConfigured = !prefs.geminiApiKey.isNullOrBlank()
-                        )
-                    }
                 }
         }
     }
@@ -78,9 +62,8 @@ class HomeViewModel @Inject constructor(
 
 data class HomeUiState(
     val mealPlan: MealPlan? = null,
-    val apiKeyConfigured: Boolean = true,
-    val pantryItemCount: Int = 0, // Will be populated when Pantry is implemented
-    val savedRecipeCount: Int = 0 // Will be populated when recipe saving is implemented
+    val pantryItemCount: Int = 0,
+    val savedRecipeCount: Int = 0
 ) {
     val weekDisplayText: String
         get() {

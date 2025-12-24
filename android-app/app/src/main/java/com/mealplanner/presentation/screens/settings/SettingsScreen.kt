@@ -2,8 +2,6 @@ package com.mealplanner.presentation.screens.settings
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -11,10 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 
@@ -24,7 +19,6 @@ fun SettingsScreen(
     onBack: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
-    val preferences by viewModel.preferences.collectAsState()
     val sampleDataState by viewModel.sampleDataState.collectAsState()
     val pantryStaplesState by viewModel.pantryStaplesState.collectAsState()
 
@@ -71,10 +65,14 @@ fun SettingsScreen(
         }
     }
 
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = { Text("Settings") },
+                scrollBehavior = scrollBehavior,
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -85,6 +83,7 @@ fun SettingsScreen(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    scrolledContainerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             )
@@ -98,22 +97,6 @@ fun SettingsScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // API Key Section
-            item {
-                ApiKeySection(
-                    apiKey = preferences.geminiApiKey ?: "",
-                    onApiKeyChange = { viewModel.updateApiKey(it) }
-                )
-            }
-
-            // Meal Planning Section
-            item {
-                MealPlanningSection(
-                    servings = preferences.targetServings,
-                    onServingsChange = { viewModel.updateTargetServings(it) }
-                )
-            }
-
             // Developer Tools Section
             item {
                 DeveloperToolsSection(
@@ -127,196 +110,6 @@ fun SettingsScreen(
             // About section
             item {
                 AboutSection()
-            }
-        }
-    }
-}
-
-@Composable
-private fun ApiKeySection(
-    apiKey: String,
-    onApiKeyChange: (String) -> Unit
-) {
-    var text by remember(apiKey) { mutableStateOf(apiKey) }
-    var showKey by remember { mutableStateOf(false) }
-    val focusManager = LocalFocusManager.current
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Key,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Gemini API Key",
-                    style = MaterialTheme.typography.titleMedium
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "Required for AI-powered meal generation and recipe images",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("API Key") },
-                placeholder = { Text("Enter your Gemini API key") },
-                visualTransformation = if (showKey) {
-                    VisualTransformation.None
-                } else {
-                    PasswordVisualTransformation()
-                },
-                trailingIcon = {
-                    Row {
-                        IconButton(onClick = { showKey = !showKey }) {
-                            Icon(
-                                imageVector = if (showKey) {
-                                    Icons.Default.VisibilityOff
-                                } else {
-                                    Icons.Default.Visibility
-                                },
-                                contentDescription = if (showKey) "Hide" else "Show"
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                onApiKeyChange(text)
-                                focusManager.clearFocus()
-                            }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = "Save"
-                            )
-                        }
-                    }
-                },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(
-                    onDone = {
-                        onApiKeyChange(text)
-                        focusManager.clearFocus()
-                    }
-                )
-            )
-
-            if (apiKey.isNotBlank()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "API key configured",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "Get a free API key at aistudio.google.com",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun MealPlanningSection(
-    servings: Int,
-    onServingsChange: (Int) -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Restaurant,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Meal Planning",
-                    style = MaterialTheme.typography.titleMedium
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Servings per meal
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Servings per meal",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = { if (servings > 1) onServingsChange(servings - 1) },
-                        enabled = servings > 1
-                    ) {
-                        Icon(Icons.Default.Remove, contentDescription = "Decrease")
-                    }
-
-                    Text(
-                        text = servings.toString(),
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    )
-
-                    IconButton(
-                        onClick = { if (servings < 12) onServingsChange(servings + 1) },
-                        enabled = servings < 12
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "Increase")
-                    }
-                }
             }
         }
     }
@@ -356,7 +149,7 @@ private fun DeveloperToolsSection(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Test the app with sample data without needing an API key",
+                text = "Test the app with sample data for quick exploration",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -447,7 +240,9 @@ private fun AboutSection() {
         )
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(

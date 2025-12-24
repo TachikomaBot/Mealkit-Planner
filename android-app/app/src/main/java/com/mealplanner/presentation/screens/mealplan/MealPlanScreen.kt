@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -87,13 +88,18 @@ fun MealPlanScreen(
         return
     }
 
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = { Text("Meals") },
+                scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    scrolledContainerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onTertiaryContainer
                 )
             )
         }
@@ -116,12 +122,6 @@ fun MealPlanScreen(
                 is MealPlanUiState.Empty -> {
                     EmptyMealPlanContent(
                         onGenerateAI = { viewModel.generateMealPlan() }
-                    )
-                }
-
-                is MealPlanUiState.NoApiKey -> {
-                    NoApiKeyContent(
-                        onNavigateToSettings = onNavigateToSettings
                     )
                 }
 
@@ -230,52 +230,6 @@ private fun EmptyMealPlanContent(
             Icon(Icons.Default.AutoAwesome, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
             Text("Generate Meal Plan")
-        }
-    }
-}
-
-@Composable
-private fun NoApiKeyContent(
-    onNavigateToSettings: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = "\uD83D\uDD11",
-            style = MaterialTheme.typography.displayLarge
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            text = "API Key Required",
-            style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "Add your Gemini API key in Settings to generate personalized meal plans",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        Button(
-            onClick = onNavigateToSettings,
-            modifier = Modifier.fillMaxWidth(0.8f)
-        ) {
-            Icon(Icons.Default.Settings, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Go to Settings")
         }
     }
 }
@@ -866,11 +820,14 @@ private fun ActivePlanContent(
 
     val title = if (showGroceryList) "Grocery List" else "Weekly Meals"
     val secondaryTitle = if (showGroceryList) "Meals" else "Groceries"
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = { Text(title) },
+                scrollBehavior = scrollBehavior,
                 actions = {
                     // Toggle button to switch views
                     TextButton(onClick = onToggleViewMode) {
@@ -884,11 +841,9 @@ private fun ActivePlanContent(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = if (showGroceryList && !shoppingComplete) {
-                        MaterialTheme.colorScheme.tertiaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.primaryContainer
-                    }
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    scrolledContainerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onTertiaryContainer
                 )
             )
         }
@@ -1358,7 +1313,7 @@ private fun GroceryListLoadingScreen() {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White),
+            .background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -1389,7 +1344,7 @@ private fun GroceryListLoadingScreen() {
             Text(
                 text = "Building your grocery list...",
                 style = MaterialTheme.typography.titleMedium,
-                color = Color.DarkGray,
+                color = MaterialTheme.colorScheme.onBackground,
                 textAlign = TextAlign.Center
             )
 
@@ -1398,7 +1353,7 @@ private fun GroceryListLoadingScreen() {
             Text(
                 text = "Organizing items by aisle",
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color.Gray,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
 

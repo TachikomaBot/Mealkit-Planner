@@ -171,13 +171,8 @@ class MealGenerationService : Service() {
         serviceScope.launch {
             _generationState.value = GenerationState.Generating(null)
 
-            // Get user preferences
+            // Get user preferences (API key is on backend, not needed here)
             val preferences = userRepository.getPreferences()
-
-            if (!preferences.hasApiKey) {
-                handleError("Gemini API key not configured")
-                return@launch
-            }
 
             // Get pantry items to consider for meal planning
             val pantryItems = pantryRepository.getAllItems()

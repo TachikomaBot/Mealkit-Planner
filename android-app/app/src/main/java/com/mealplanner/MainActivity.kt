@@ -2,6 +2,8 @@ package com.mealplanner
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import android.graphics.Color
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,7 +18,14 @@ import dagger.hilt.android.AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT)
+        )
+
+        // Remove the translucent scrim on three-button navigation
+        window.isNavigationBarContrastEnforced = false
+
         setContent {
             MealPlannerTheme {
                 Surface(

@@ -7,6 +7,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
@@ -38,16 +39,16 @@ private val LightColorScheme = lightColorScheme(
 private val DarkColorScheme = darkColorScheme(
     primary = Tomato400,
     onPrimary = Tomato900,
-    primaryContainer = Tomato800,
-    onPrimaryContainer = Tomato100,
+    primaryContainer = Tomato600,  // Brighter for dark mode headers
+    onPrimaryContainer = Tomato50,
     secondary = Pacific400,
     onSecondary = Pacific900,
-    secondaryContainer = Pacific800,
-    onSecondaryContainer = Pacific100,
+    secondaryContainer = Pacific600,  // Brighter for dark mode headers
+    onSecondaryContainer = Pacific50,
     tertiary = Mustard400,
     onTertiary = Mustard900,
-    tertiaryContainer = Mustard800,
-    onTertiaryContainer = Mustard100,
+    tertiaryContainer = Mustard600,  // Brighter for dark mode headers
+    onTertiaryContainer = Mustard50,
     background = BackgroundDark,
     onBackground = Alabaster100,
     surface = SurfaceDark,
@@ -68,11 +69,8 @@ fun MealPlannerTheme(
 
     val view = LocalView.current
     if (!view.isInEditMode) {
-        SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.background.toArgb()
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
-        }
     }
 
     MaterialTheme(

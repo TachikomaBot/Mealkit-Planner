@@ -20,8 +20,8 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // API base URL - can be overridden in local.properties
-        buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:3001\"")
+        // API base URL - Railway production server
+        buildConfigField("String", "API_BASE_URL", "\"https://mealkit-planner-production.up.railway.app\"")
     }
 
     buildTypes {

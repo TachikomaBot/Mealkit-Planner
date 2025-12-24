@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -42,17 +43,21 @@ fun ShoppingScreen(
         targetValue = if (isShoppingMode) {
             MaterialTheme.colorScheme.tertiary
         } else {
-            MaterialTheme.colorScheme.primaryContainer
+            MaterialTheme.colorScheme.tertiaryContainer
         },
         label = "topBarColor"
     )
 
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = {
                     Text(if (isShoppingMode) "Shopping Mode" else "Shopping List")
                 },
+                scrollBehavior = scrollBehavior,
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -81,10 +86,11 @@ fun ShoppingScreen(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = topBarColor,
+                    scrolledContainerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = if (isShoppingMode) {
                         MaterialTheme.colorScheme.onTertiary
                     } else {
-                        MaterialTheme.colorScheme.onPrimaryContainer
+                        MaterialTheme.colorScheme.onTertiaryContainer
                     }
                 )
             )
