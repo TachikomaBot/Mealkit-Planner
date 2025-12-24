@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Background circle -->
+    <path
+        android:fillColor="#E67E22"
+        android:pathData="M54,54m-40,0a40,40 0,1 1,80 0a40,40 0,1 1,-80 0" />
+    <!-- Fork icon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M44,30 L44,50 L46,50 L46,78 L52,78 L52,50 L54,50 L54,30 L52,30 L52,45 L50,45 L50,30 L48,30 L48,45 L46,45 L46,30 Z" />
+    <!-- Knife icon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M58,30 C58,30 62,35 62,50 L62,78 L56,78 L56,50 C56,40 58,30 58,30 Z" />
+</vector>

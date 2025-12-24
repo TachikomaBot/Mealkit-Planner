@@ -38,8 +38,20 @@ dev-dist
 *.csv
 recipes_w_search_terms.csv
 
+# Backend data (copy from public/data)
+backend/data/recipes.json
+
 # Build artifacts
 tsconfig.tsbuildinfo
 
 # Claude Code local settings
 .claude/
+
+# Android
+android-app/.gradle/
+android-app/app/build/
+android-app/build/
+android-app/local.properties
+android-app/.idea/
+*.apk
+*.aab
