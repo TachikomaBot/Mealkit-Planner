@@ -15,15 +15,6 @@
     "import:recipes:all": "npx tsx scripts/import-recipes.ts -l 50000 -o public/data/recipes.json"
   },
   "dependencies": {
-    "@capacitor-community/keep-awake": "^7.1.0",
-    "@capacitor/android": "^7.4.4",
-    "@capacitor/app": "^7.1.0",
-    "@capacitor/cli": "^7.4.4",
-    "@capacitor/core": "^7.4.4",
-    "@capacitor/local-notifications": "^7.0.3",
-    "@capacitor/splash-screen": "^7.0.3",
-    "@capacitor/status-bar": "^7.0.3",
-    "@capawesome/capacitor-background-task": "^7.0.1",
     "@google/genai": "^1.30.0",
     "dexie": "^4.0.8",
     "dexie-react-hooks": "^1.1.7",
