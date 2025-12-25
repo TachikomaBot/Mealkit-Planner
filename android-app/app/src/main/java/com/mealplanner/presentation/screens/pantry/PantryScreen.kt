@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,6 +17,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxState
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -247,8 +252,20 @@ private fun PantryGrid(
     val expandedItem = items.find { it.id == expandedItemId }
     val expandedIndex = items.indexOfFirst { it.id == expandedItemId }
     val expandedRow = if (expandedIndex >= 0) expandedIndex / 2 else -1
+    val listState = rememberLazyGridState()
+
+    LaunchedEffect(expandedItemId) {
+        if (expandedIndex >= 0) {
+            // Scroll to the row containing the item (plus a bit of offset if needed, or just the item itself)
+            // Adjuster is inserted *after* this row. Scrolling to the item ensures it's visible.
+            // We might want to scroll specifically so the adjuster is visible.
+            // Let's scroll to the item index.
+            listState.animateScrollToItem(expandedIndex)
+        }
+    }
 
     LazyVerticalGrid(
+        state = listState,
         columns = GridCells.Fixed(2),
         contentPadding = PaddingValues(16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -440,6 +457,7 @@ private fun IngredientCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AdjusterRow(
     item: PantryItem,
@@ -448,81 +466,154 @@ private fun AdjusterRow(
     onDelete: () -> Unit,
     onClose: () -> Unit
 ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = item.name,
-                    style = MaterialTheme.typography.titleMedium
-                )
-                IconButton(onClick = onClose) {
-                    Icon(Icons.Default.Close, contentDescription = "Close")
-                }
-            }
+    // Hoisted state
+    var currentStockLevel by remember(item.effectiveStockLevel) { mutableStateOf(item.effectiveStockLevel) }
+    var currentQuantity by remember(item.quantityRemaining) { mutableDoubleStateOf(item.quantityRemaining) }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Different UI based on tracking style
-            when (item.trackingStyle) {
-                TrackingStyle.STOCK_LEVEL -> {
-                    StockLevelAdjuster(
-                        currentLevel = item.effectiveStockLevel,
-                        onSave = onSaveStockLevel
-                    )
+    val swipeState = rememberSwipeToDismissBoxState(
+        positionalThreshold = { totalDistance -> totalDistance * 0.75f },
+        confirmValueChange = { value ->
+            when (value) {
+                SwipeToDismissBoxValue.StartToEnd -> {
+                    // Save
+                    if (item.trackingStyle == TrackingStyle.STOCK_LEVEL) {
+                        onSaveStockLevel(currentStockLevel)
+                    } else {
+                        onSaveQuantity(currentQuantity)
+                    }
+                    onClose() // Close after save as per user request
+                    true
                 }
-                TrackingStyle.COUNT -> {
-                    CountAdjuster(
-                        item = item,
-                        onSave = onSaveQuantity
-                    )
+                SwipeToDismissBoxValue.EndToStart -> {
+                    // Delete
+                    onDelete()
+                    true
                 }
-                TrackingStyle.PRECISE -> {
-                    PreciseAdjuster(
-                        item = item,
-                        onSave = onSaveQuantity
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Delete button (always shown)
-            OutlinedButton(
-                onClick = onDelete,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error
-                )
-            ) {
-                Icon(Icons.Default.Delete, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Delete")
+                else -> false
             }
         }
-    }
+    )
+
+    SwipeToDismissBox(
+        state = swipeState,
+        backgroundContent = {
+            val color = when (swipeState.dismissDirection) {
+                SwipeToDismissBoxValue.StartToEnd -> Color(0xFF4CAF50) // Green for Save
+                SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.error // Red for Delete
+                else -> Color.Transparent
+            }
+            val alignment = when (swipeState.dismissDirection) {
+                SwipeToDismissBoxValue.StartToEnd -> Alignment.CenterStart
+                SwipeToDismissBoxValue.EndToStart -> Alignment.CenterEnd
+                else -> Alignment.Center
+            }
+            val icon = when (swipeState.dismissDirection) {
+                SwipeToDismissBoxValue.StartToEnd -> Icons.Default.Check
+                SwipeToDismissBoxValue.EndToStart -> Icons.Default.Delete
+                else -> Icons.Default.Info
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(vertical = 8.dp)
+                    .clip(RoundedCornerShape(12.dp)) // Match card shape
+                    .background(color)
+                    .padding(horizontal = 20.dp),
+                contentAlignment = alignment
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = Color.White
+                )
+            }
+        },
+        content = {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    // Header
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = item.name,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        IconButton(onClick = onClose) {
+                            Icon(Icons.Default.Close, contentDescription = "Close")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Different UI based on tracking style
+                    when (item.trackingStyle) {
+                        TrackingStyle.STOCK_LEVEL -> {
+                            StockLevelAdjuster(
+                                currentLevel = currentStockLevel,
+                                onLevelChange = { currentStockLevel = it }
+                            )
+                        }
+                        TrackingStyle.COUNT -> {
+                            CountAdjuster(
+                                item = item,
+                                currentCount = currentQuantity,
+                                onCountChange = { currentQuantity = it }
+                            )
+                        }
+                        TrackingStyle.PRECISE -> {
+                            PreciseAdjuster(
+                                item = item,
+                                currentQuantity = currentQuantity,
+                                onQuantityChange = { currentQuantity = it }
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // Helper text for swipe
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Swipe right to save",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
+                         Text(
+                            text = "Swipe left to delete",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
+                    }
+                }
+            }
+        }
+    )
 }
 
 @Composable
 private fun StockLevelAdjuster(
     currentLevel: StockLevel,
-    onSave: (StockLevel) -> Unit
+    onLevelChange: (StockLevel) -> Unit
 ) {
-    var selectedLevel by remember(currentLevel) { mutableStateOf(currentLevel) }
+    // Stateless: selectedLevel is passed in as currentLevel
+
 
     Column {
         Text(
@@ -539,8 +630,8 @@ private fun StockLevelAdjuster(
         ) {
             StockLevel.entries.forEach { level ->
                 FilterChip(
-                    selected = selectedLevel == level,
-                    onClick = { selectedLevel = level },
+                    selected = currentLevel == level,
+                    onClick = { onLevelChange(level) },
                     label = { Text(level.displayName) },
                     modifier = Modifier.weight(1f),
                     colors = FilterChipDefaults.filterChipColors(
@@ -555,28 +646,15 @@ private fun StockLevelAdjuster(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Save button
-        Button(
-            onClick = { onSave(selectedLevel) },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = selectedLevel != currentLevel
-        ) {
-            Icon(Icons.Default.Check, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Save")
-        }
     }
 }
 
 @Composable
 private fun CountAdjuster(
     item: PantryItem,
-    onSave: (Double) -> Unit
+    currentCount: Double,
+    onCountChange: (Double) -> Unit
 ) {
-    var localCount by remember(item.id) { mutableIntStateOf(item.quantityRemaining.toInt()) }
-
     Column {
         // Count display with +/- buttons
         Row(
@@ -585,8 +663,8 @@ private fun CountAdjuster(
             verticalAlignment = Alignment.CenterVertically
         ) {
             FilledIconButton(
-                onClick = { if (localCount > 0) localCount-- },
-                enabled = localCount > 0
+                onClick = { if (currentCount > 0) onCountChange(currentCount - 1) },
+                enabled = currentCount > 0
             ) {
                 Icon(Icons.Default.Remove, contentDescription = "Decrease")
             }
@@ -594,7 +672,7 @@ private fun CountAdjuster(
             Spacer(modifier = Modifier.width(24.dp))
 
             Text(
-                text = localCount.toString(),
+                text = currentCount.toInt().toString(),
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.primary
             )
@@ -608,34 +686,22 @@ private fun CountAdjuster(
             Spacer(modifier = Modifier.width(24.dp))
 
             FilledIconButton(
-                onClick = { localCount++ }
+                onClick = { onCountChange(currentCount + 1) }
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Increase")
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Save button
-        Button(
-            onClick = { onSave(localCount.toDouble()) },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = localCount != item.quantityRemaining.toInt()
-        ) {
-            Icon(Icons.Default.Check, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Save")
-        }
     }
 }
 
 @Composable
 private fun PreciseAdjuster(
     item: PantryItem,
-    onSave: (Double) -> Unit
+    currentQuantity: Double,
+    onQuantityChange: (Double) -> Unit
 ) {
-    var localQuantity by remember(item.id) { mutableFloatStateOf(item.quantityRemaining.toFloat()) }
-    val percentRemaining = (localQuantity / item.quantityInitial.toFloat()).coerceIn(0f, 1f)
+    val percentRemaining = (currentQuantity.toFloat() / item.quantityInitial.toFloat()).coerceIn(0f, 1f)
 
     Column {
         // Quantity display
@@ -645,7 +711,7 @@ private fun PreciseAdjuster(
             verticalAlignment = Alignment.Bottom
         ) {
             Text(
-                text = localQuantity.toInt().toString(),
+                text = currentQuantity.toInt().toString(),
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.primary
             )
@@ -675,8 +741,8 @@ private fun PreciseAdjuster(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Slider(
-                value = localQuantity,
-                onValueChange = { localQuantity = it },
+                value = currentQuantity.toFloat(),
+                onValueChange = { onQuantityChange(it.toDouble()) },
                 valueRange = 0f..item.quantityInitial.toFloat(),
                 modifier = Modifier
                     .weight(1f)
@@ -689,17 +755,6 @@ private fun PreciseAdjuster(
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Save button
-        Button(
-            onClick = { onSave(localQuantity.toLong().toDouble()) }, // Round to whole number
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(Icons.Default.Check, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Save")
-        }
     }
 }
 
