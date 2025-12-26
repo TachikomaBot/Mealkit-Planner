@@ -176,8 +176,9 @@ private fun ThisWeekSection(
             }
         }
 
-            Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
+        if (uiState.totalPlanned > 0) {
             // Recipe list
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
