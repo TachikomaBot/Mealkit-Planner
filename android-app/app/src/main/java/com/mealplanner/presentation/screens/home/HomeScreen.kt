@@ -77,66 +77,15 @@ fun HomeScreen(
             )
         }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // This Week's Meals Section
-            item {
-                ThisWeekSection(
-                    uiState = uiState,
-                    onRecipeClick = onRecipeClick,
-                    onNavigateToMeals = onNavigateToMeals,
-                    onToggleCooked = { recipe ->
-                        if (recipe.cooked) {
-                            viewModel.unmarkRecipeCooked(recipe)
-                        } else {
-                            viewModel.markRecipeCooked(recipe)
-                        }
-                    }
-                )
-            }
-
-            // Quick Stats Grid
-            item {
-                QuickStatsSection(
-                    pantryCount = uiState.pantryItemCount,
-                    recipeCount = uiState.savedRecipeCount
-                )
-            }
-
-            // Quick Actions
-            item {
-                QuickActionsSection(
-                    hasPlannedMeals = uiState.totalPlanned > 0,
-                    onNavigateToMeals = onNavigateToMeals,
-                    onNavigateToShopping = onNavigateToShopping
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ThisWeekSection(
-    uiState: HomeUiState,
-    onRecipeClick: (Recipe) -> Unit,
-    onNavigateToMeals: () -> Unit,
-    onToggleCooked: (PlannedRecipe) -> Unit
-) {
     // Dynamic subheader color: Darker Tomato in light mode, Lighter Tomato in dark mode
     val subheaderColor = if (isSystemInDarkTheme()) Tomato500 else Tomato700
     val onSubheaderColor = Color.White
 
-    Column {
-        // Header Card
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Fixed Subheader
         Surface(
             color = subheaderColor,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp)
+            modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier.padding(16.dp)
@@ -176,24 +125,58 @@ private fun ThisWeekSection(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (uiState.totalPlanned > 0) {
-            // Recipe list
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                uiState.plannedRecipes.forEach { plannedRecipe ->
-                    PlannedRecipeItem(
-                        plannedRecipe = plannedRecipe,
-                        onClick = { onRecipeClick(plannedRecipe.recipe) },
-                        onToggleCooked = { onToggleCooked(plannedRecipe) }
-                    )
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // This Week's Meals List
+            if (uiState.totalPlanned > 0) {
+                // Recipe list
+                item {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        uiState.plannedRecipes.forEach { plannedRecipe ->
+                            PlannedRecipeItem(
+                                plannedRecipe = plannedRecipe,
+                                onClick = { onRecipeClick(plannedRecipe.recipe) },
+                                onToggleCooked = {
+                                    if (plannedRecipe.cooked) {
+                                        viewModel.unmarkRecipeCooked(plannedRecipe)
+                                    } else {
+                                        viewModel.markRecipeCooked(plannedRecipe)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            } else {
+                // Empty state
+                item {
+                    EmptyMealPlanCard(onNavigateToMeals = onNavigateToMeals)
                 }
             }
-        } else {
-            // Empty state
-            EmptyMealPlanCard(onNavigateToMeals = onNavigateToMeals)
+
+            // Quick Stats Grid
+            item {
+                QuickStatsSection(
+                    pantryCount = uiState.pantryItemCount,
+                    recipeCount = uiState.savedRecipeCount
+                )
+            }
+
+            // Quick Actions
+            item {
+                QuickActionsSection(
+                    hasPlannedMeals = uiState.totalPlanned > 0,
+                    onNavigateToMeals = onNavigateToMeals,
+                    onNavigateToShopping = onNavigateToShopping
+                )
+            }
         }
     }
 }
