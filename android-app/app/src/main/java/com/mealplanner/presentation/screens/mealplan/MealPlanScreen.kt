@@ -915,7 +915,7 @@ private fun EmbeddedGroceryList(
     Column(modifier = Modifier.fillMaxSize()) {
         // Progress header
         Surface(
-            color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -942,7 +942,7 @@ private fun EmbeddedGroceryList(
                         Button(
                             onClick = onMarkShoppingComplete,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.tertiary
+                                containerColor = Pacific600
                             )
                         ) {
                             Icon(Icons.Default.Done, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -958,7 +958,7 @@ private fun EmbeddedGroceryList(
                         .fillMaxWidth()
                         .height(8.dp)
                         .clip(RoundedCornerShape(4.dp)),
-                    color = MaterialTheme.colorScheme.tertiary,
+                    color = Pacific600,
                     trackColor = MaterialTheme.colorScheme.surfaceVariant
                 )
             }
@@ -1013,7 +1013,7 @@ private fun EmbeddedCategoryHeader(
         Text(
             text = category,
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.tertiary
+            color = Pacific600
         )
         Text(
             text = "$checkedCount/$itemCount",
