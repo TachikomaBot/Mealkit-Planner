@@ -844,9 +844,10 @@ private fun ActivePlanContent(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    containerColor = Pacific600,
                     scrolledContainerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                    titleContentColor = androidx.compose.ui.graphics.Color.White,
+                    actionIconContentColor = androidx.compose.ui.graphics.Color.White
                 )
             )
         }
