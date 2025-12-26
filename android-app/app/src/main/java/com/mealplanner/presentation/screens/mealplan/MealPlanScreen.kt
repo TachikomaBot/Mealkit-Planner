@@ -1,7 +1,9 @@
 package com.mealplanner.presentation.screens.mealplan
 
+import com.mealplanner.presentation.theme.Pacific500
 import com.mealplanner.presentation.theme.Pacific600
 import com.mealplanner.presentation.theme.Pacific700
+import androidx.compose.foundation.isSystemInDarkTheme
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -912,10 +914,14 @@ private fun EmbeddedGroceryList(
             .filterValues { it.isNotEmpty() }
     }
 
+    // Dynamic subheader color: Darker Pacific in light mode, Lighter Pacific in dark mode
+    val subheaderColor = if (isSystemInDarkTheme()) Pacific500 else Pacific700
+    val onSubheaderColor = Color.White
+
     Column(modifier = Modifier.fillMaxSize()) {
         // Progress header
         Surface(
-            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+            color = subheaderColor,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -929,20 +935,22 @@ private fun EmbeddedGroceryList(
                     Column {
                         Text(
                             text = "Shopping Progress",
-                            style = MaterialTheme.typography.titleMedium
+                            style = MaterialTheme.typography.titleMedium,
+                            color = onSubheaderColor
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = "${shoppingList.checkedItems} of ${shoppingList.totalItems} items",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = onSubheaderColor.copy(alpha = 0.7f)
                         )
                     }
                     if (!shoppingComplete && shoppingList.checkedItems > 0) {
                         Button(
                             onClick = onMarkShoppingComplete,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Pacific600
+                                containerColor = Color.White,
+                                contentColor = subheaderColor
                             )
                         ) {
                             Icon(Icons.Default.Done, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -958,8 +966,8 @@ private fun EmbeddedGroceryList(
                         .fillMaxWidth()
                         .height(8.dp)
                         .clip(RoundedCornerShape(4.dp)),
-                    color = Pacific600,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    color = Color.White,
+                    trackColor = Color.White.copy(alpha = 0.3f)
                 )
             }
         }
