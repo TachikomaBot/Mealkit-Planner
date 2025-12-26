@@ -81,7 +81,10 @@ fun HomeScreen(
     val subheaderColor = if (isSystemInDarkTheme()) Tomato500 else Tomato700
     val onSubheaderColor = Color.White
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier
+        .fillMaxSize()
+        .padding(padding)
+    ) {
         // Fixed Subheader
         Surface(
             color = subheaderColor,
@@ -128,7 +131,7 @@ fun HomeScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .weight(1f),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
