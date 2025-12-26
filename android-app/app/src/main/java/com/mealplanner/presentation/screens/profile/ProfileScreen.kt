@@ -1,5 +1,7 @@
 package com.mealplanner.presentation.screens.profile
 
+import com.mealplanner.presentation.theme.Sage600
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -50,9 +52,9 @@ fun ProfileScreen(
                 title = { Text("Profile") },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    containerColor = Sage600,
                     scrolledContainerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    titleContentColor = androidx.compose.ui.graphics.Color.White
                 )
             )
         }

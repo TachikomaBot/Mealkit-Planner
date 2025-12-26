@@ -13,10 +13,10 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 private val LightColorScheme = lightColorScheme(
-    primary = Tomato500,
-    onPrimary = OnPrimary,
-    primaryContainer = Tomato100,
-    onPrimaryContainer = Tomato800,
+    primary = Alabaster800, // Neutral for buttons
+    onPrimary = Color.White,
+    primaryContainer = Alabaster100,
+    onPrimaryContainer = Alabaster900,
     secondary = Pacific500,
     onSecondary = OnSecondary,
     secondaryContainer = Pacific100,
@@ -37,17 +37,17 @@ private val LightColorScheme = lightColorScheme(
 )
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Tomato400,
-    onPrimary = Tomato900,
-    primaryContainer = Tomato600,  // Brighter for dark mode headers
-    onPrimaryContainer = Tomato50,
+    primary = Alabaster200, // Neutral for buttons in dark mode
+    onPrimary = Alabaster900,
+    primaryContainer = Alabaster800,
+    onPrimaryContainer = Alabaster100,
     secondary = Pacific400,
     onSecondary = Pacific900,
-    secondaryContainer = Pacific600,  // Brighter for dark mode headers
+    secondaryContainer = Pacific600,
     onSecondaryContainer = Pacific50,
     tertiary = Mustard400,
     onTertiary = Mustard900,
-    tertiaryContainer = Mustard600,  // Brighter for dark mode headers
+    tertiaryContainer = Mustard600,
     onTertiaryContainer = Mustard50,
     background = BackgroundDark,
     onBackground = Alabaster100,

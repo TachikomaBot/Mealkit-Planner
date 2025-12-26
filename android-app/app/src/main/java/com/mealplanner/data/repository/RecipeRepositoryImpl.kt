@@ -93,11 +93,8 @@ class RecipeRepositoryImpl @Inject constructor(
         pantryItems: List<PantryItem>,
         recentRecipeHashes: List<String>
     ): Flow<GenerationResult> = flow {
-        val apiKey = preferences.geminiApiKey ?: run {
-            emit(GenerationResult.Error("No API key configured"))
-            return@flow
-        }
-
+        // API key is handled by backend
+        
         // Emit connecting status
         emit(
             GenerationResult.Progress(
@@ -123,7 +120,7 @@ class RecipeRepositoryImpl @Inject constructor(
             )
 
             val startResponse = withContext(Dispatchers.IO) {
-                mealPlanApi.startMealPlanGeneration(apiKey, request)
+                mealPlanApi.startMealPlanGeneration(request)
             }
 
             val jobId = startResponse.jobId

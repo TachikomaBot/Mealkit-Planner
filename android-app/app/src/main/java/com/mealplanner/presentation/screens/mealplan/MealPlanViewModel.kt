@@ -285,23 +285,16 @@ class MealPlanViewModel @Inject constructor(
             .onSuccess { shoppingList ->
                 android.util.Log.d("MealPlanVM", "Generated ${shoppingList.items.size} shopping items, now polishing...")
                 // Then polish it with Gemini
-                val apiKey = preferencesUseCase.getApiKey()
-                if (apiKey != null) {
-                    shoppingRepository.polishShoppingList(mealPlanId, apiKey)
-                        .onSuccess { polishedList ->
-                            android.util.Log.d("MealPlanVM", "Polish complete: ${polishedList.items.size} items")
-                            transitionToActivePlan()
-                        }
-                        .onFailure { error ->
-                            android.util.Log.e("MealPlanVM", "Polish failed: ${error.message}")
-                            // Polish failed but shopping list is still available (unpolished)
-                            transitionToActivePlan()
-                        }
-                } else {
-                    android.util.Log.w("MealPlanVM", "No API key, skipping polish")
-                    // No API key, but shopping list is still available (unpolished)
-                    transitionToActivePlan()
-                }
+                shoppingRepository.polishShoppingList(mealPlanId)
+                    .onSuccess { polishedList ->
+                        android.util.Log.d("MealPlanVM", "Polish complete: ${polishedList.items.size} items")
+                        transitionToActivePlan()
+                    }
+                    .onFailure { error ->
+                        android.util.Log.e("MealPlanVM", "Polish failed: ${error.message}")
+                        // Polish failed but shopping list is still available (unpolished)
+                        transitionToActivePlan()
+                    }
             }
             .onFailure { error ->
                 android.util.Log.e("MealPlanVM", "Shopping list generation failed: ${error.message}")

@@ -1,5 +1,8 @@
 package com.mealplanner.presentation.screens.mealplan
 
+import com.mealplanner.presentation.theme.Pacific600
+import com.mealplanner.presentation.theme.Pacific700
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.RepeatMode
@@ -97,9 +100,9 @@ fun MealPlanScreen(
                 title = { Text("Meals") },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    containerColor = Pacific600,
                     scrolledContainerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                    titleContentColor = androidx.compose.ui.graphics.Color.White
                 )
             )
         }

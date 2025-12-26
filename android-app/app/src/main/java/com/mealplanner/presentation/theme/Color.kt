@@ -38,6 +38,18 @@ val Mustard700 = Color(0xFFA16207)
 val Mustard800 = Color(0xFF854D0E)
 val Mustard900 = Color(0xFF713F12)
 
+// Profile - Sage Green
+val Sage50 = Color(0xFFF4F8F3)
+val Sage100 = Color(0xFFE4EDE1)
+val Sage200 = Color(0xFFCCDDC7)
+val Sage300 = Color(0xFFACC8A4)
+val Sage400 = Color(0xFF8FB185)
+val Sage500 = Color(0xFF7EA16B) // Base
+val Sage600 = Color(0xFF638053)
+val Sage700 = Color(0xFF4D6540)
+val Sage800 = Color(0xFF3B4D31)
+val Sage900 = Color(0xFF2E3D26)
+
 // Neutrals - Alabaster
 val Alabaster50 = Color(0xFFF8F8F9)
 val Alabaster100 = Color(0xFFF4F4F8)

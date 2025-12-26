@@ -1,5 +1,8 @@
 package com.mealplanner.presentation.screens.pantry
 
+import com.mealplanner.presentation.theme.Mustard600
+import com.mealplanner.presentation.theme.Mustard700
+
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -54,9 +57,17 @@ fun PantryScreen(
                 title = { Text("Pantry") },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    containerColor = Mustard600,
                     scrolledContainerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    titleContentColor = androidx.compose.ui.graphics.Color.Black // Mustard500 is light/bright, Black content? Or White? 500 is strong yellow. Usually Black on Yellow.
+                    // Wait, Mustard500 (0xFFEAB308) is fairly dark yellow/gold. 
+                    // Let's check consistency. Tomato500 (Red) takes White. Pacific500 (Teal) takes White.
+                    // Mustard500 is Gold. White *might* be low contrast. 
+                    // Let's try White first for consistency, or Black if it's too light.
+                    // Actually, Mustard500 is quite saturated. White text on 0xFFEAB308 is questionable.
+                    // Let's use Color.Black for Mustard for readability, or White if bold.
+                    // I'll stick to White for now to match others, but it might need tweaking.
+                    // Actually, let's use White. 
                 )
             )
         },

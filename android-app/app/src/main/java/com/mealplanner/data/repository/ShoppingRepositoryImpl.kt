@@ -186,7 +186,7 @@ class ShoppingRepositoryImpl @Inject constructor(
         shoppingDao.getCheckedItemsForMealPlan(mealPlanId).map { it.toShoppingItem() }
     }
 
-    override suspend fun polishShoppingList(mealPlanId: Long, apiKey: String): Result<ShoppingList> = withContext(Dispatchers.IO) {
+    override suspend fun polishShoppingList(mealPlanId: Long): Result<ShoppingList> = withContext(Dispatchers.IO) {
         try {
             android.util.Log.d("ShoppingRepo", "Polishing shopping list for meal plan $mealPlanId")
 
@@ -225,7 +225,7 @@ class ShoppingRepositoryImpl @Inject constructor(
 
             // Start async polish job
             android.util.Log.d("ShoppingRepo", "Starting async polish job...")
-            val startResponse = mealPlanApi.startGroceryPolish(apiKey, request)
+            val startResponse = mealPlanApi.startGroceryPolish(request)
             val jobId = startResponse.jobId
             android.util.Log.d("ShoppingRepo", "Polish job started: $jobId")
 

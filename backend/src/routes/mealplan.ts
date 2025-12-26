@@ -47,10 +47,10 @@ router.use((_req, _res, next) => {
  *   Accept: text/event-stream (for SSE) or application/json
  */
 router.post('/generate', async (req, res) => {
-  const apiKey = req.headers['x-gemini-key'] as string;
+  const apiKey = (req.headers['x-gemini-key'] as string) || process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
-    return res.status(401).json({ error: 'Gemini API key required in X-Gemini-Key header' });
+    return res.status(401).json({ error: 'Gemini API key required in X-Gemini-Key header or GEMINI_API_KEY env var' });
   }
 
   const request = req.body as MealPlanRequest;
@@ -120,10 +120,10 @@ router.post('/generate', async (req, res) => {
  * Returns: { jobId: string }
  */
 router.post('/generate-async', async (req, res) => {
-  const apiKey = req.headers['x-gemini-key'] as string;
+  const apiKey = (req.headers['x-gemini-key'] as string) || process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
-    return res.status(401).json({ error: 'Gemini API key required in X-Gemini-Key header' });
+    return res.status(401).json({ error: 'Gemini API key required in X-Gemini-Key header or GEMINI_API_KEY env var' });
   }
 
   const request = req.body as MealPlanRequest;
@@ -292,10 +292,10 @@ function groupSteps(steps: string[]): { title: string; substeps: string[] }[] {
  *   X-Gemini-Key: Your Gemini API key
  */
 router.post('/polish-grocery-list', async (req, res) => {
-  const apiKey = req.headers['x-gemini-key'] as string;
+  const apiKey = (req.headers['x-gemini-key'] as string) || process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
-    return res.status(401).json({ error: 'Gemini API key required in X-Gemini-Key header' });
+    return res.status(401).json({ error: 'Gemini API key required in X-Gemini-Key header or GEMINI_API_KEY env var' });
   }
 
   const request = req.body as GroceryPolishRequest;
@@ -327,10 +327,10 @@ router.post('/polish-grocery-list', async (req, res) => {
  * Returns: { jobId: string }
  */
 router.post('/polish-grocery-list-async', async (req, res) => {
-  const apiKey = req.headers['x-gemini-key'] as string;
+  const apiKey = (req.headers['x-gemini-key'] as string) || process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
-    return res.status(401).json({ error: 'Gemini API key required in X-Gemini-Key header' });
+    return res.status(401).json({ error: 'Gemini API key required in X-Gemini-Key header or GEMINI_API_KEY env var' });
   }
 
   const request = req.body as GroceryPolishRequest;

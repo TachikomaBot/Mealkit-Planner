@@ -74,5 +74,5 @@ interface ShoppingRepository {
      * Polish the shopping list using Gemini to optimize quantities
      * and categorize items for easier shopping
      */
-    suspend fun polishShoppingList(mealPlanId: Long, apiKey: String): Result<ShoppingList>
+    suspend fun polishShoppingList(mealPlanId: Long): Result<ShoppingList>
 }

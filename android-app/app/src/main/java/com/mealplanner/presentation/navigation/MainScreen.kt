@@ -5,12 +5,21 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.unit.IntSize
+import kotlin.math.absoluteValue
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToDown
+import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Kitchen
@@ -20,9 +29,11 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Kitchen
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.*
+import com.mealplanner.presentation.theme.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -50,31 +61,36 @@ sealed class BottomNavTab(
     val route: String,
     val title: String,
     val selectedIcon: ImageVector,
-    val unselectedIcon: ImageVector
+    val unselectedIcon: ImageVector,
+    val color: Color
 ) {
     data object Home : BottomNavTab(
         route = "tab_home",
         title = "Home",
         selectedIcon = Icons.Filled.Home,
-        unselectedIcon = Icons.Outlined.Home
+        unselectedIcon = Icons.Outlined.Home,
+        color = Tomato600
     )
     data object Pantry : BottomNavTab(
         route = "tab_pantry",
         title = "Pantry",
         selectedIcon = Icons.Filled.Kitchen,
-        unselectedIcon = Icons.Outlined.Kitchen
+        unselectedIcon = Icons.Outlined.Kitchen,
+        color = Mustard600
     )
     data object Meals : BottomNavTab(
         route = "tab_meals",
         title = "Meals",
         selectedIcon = Icons.Filled.CalendarMonth,
-        unselectedIcon = Icons.Outlined.CalendarMonth
+        unselectedIcon = Icons.Outlined.CalendarMonth,
+        color = Pacific600
     )
     data object Profile : BottomNavTab(
         route = "tab_profile",
         title = "Profile",
         selectedIcon = Icons.Filled.Person,
-        unselectedIcon = Icons.Outlined.Person
+        unselectedIcon = Icons.Outlined.Person,
+        color = Sage600
     )
 }
 
@@ -102,6 +118,8 @@ val bottomNavTabs = listOf(
 fun MainScreen() {
     val navController = rememberNavController()
     val json = Json { ignoreUnknownKeys = true }
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentDestination = navBackStackEntry?.destination
 
     // Alternative layout: simpler Column instead of Scaffold
     Column(
@@ -113,6 +131,79 @@ fun MainScreen() {
                 .weight(1f)
                 .fillMaxWidth()
                 .consumeWindowInsets(WindowInsets.navigationBars)
+                .pointerInput(currentDestination?.route) {
+                    val currentRoute = currentDestination?.route
+                    val currentTabIndex = bottomNavTabs.indexOfFirst { it.route == currentRoute }
+
+                    if (currentTabIndex != -1) {
+                        // Custom gesture detector
+                        awaitPointerEventScope {
+                            var lastSwipeTime = 0L
+                            while (true) {
+                                // Wait for a fresh down event
+                                val down = awaitPointerEvent(pass = PointerEventPass.Initial).changes.firstOrNull { it.changedToDown() } ?: continue
+                                
+                                var totalDrag = 0f
+                                val dragId = down.id
+                                var hasSwiped = false
+                                
+                                // Loop for drag
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == dragId } ?: break
+                                    
+                                    if (change.changedToUp()) break
+
+                                    if (hasSwiped) {
+                                        // If we already swiped, consume the rest of the gesture so nothing else happens,
+                                        // then just wait for it to end.
+                                        change.consume()
+                                        continue
+                                    }
+
+                                    // Only consider unconsumed position changes
+                                    val positionChange = change.positionChange()
+                                    if (positionChange.x != 0f && !change.isConsumed) {
+                                        totalDrag += positionChange.x
+                                        change.consume()
+                                    }
+
+                                    // Check threshold. 50dp is roughly 150px on xxhdpi.
+                                    val threshold = 50.dp.toPx()
+                                    val currentTime = System.currentTimeMillis()
+                                    
+                                    if (currentTime - lastSwipeTime > 300) { // 300ms cooldown
+                                        if (totalDrag < -threshold) {
+                                            // Swipe Left -> Next Tab
+                                            if (currentTabIndex < bottomNavTabs.lastIndex) {
+                                                 val nextTab = bottomNavTabs[currentTabIndex + 1]
+                                                 navController.navigate(nextTab.route) {
+                                                     popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                                     launchSingleTop = true
+                                                     restoreState = true
+                                                 }
+                                                 hasSwiped = true
+                                                 lastSwipeTime = currentTime
+                                            }
+                                        } else if (totalDrag > threshold) {
+                                             // Swipe Right -> Prev Tab
+                                             if (currentTabIndex > 0) {
+                                                 val prevTab = bottomNavTabs[currentTabIndex - 1]
+                                                 navController.navigate(prevTab.route) {
+                                                     popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                                     launchSingleTop = true
+                                                     restoreState = true
+                                                 }
+                                                 hasSwiped = true
+                                                 lastSwipeTime = currentTime
+                                             }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
         ) {
             NavHost(
                 navController = navController,
@@ -243,9 +334,9 @@ private fun BottomNavigationBar(navController: NavHostController) {
                     },
                     label = { Text(tab.title) },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primaryContainer
+                        selectedIconColor = tab.color,
+                        selectedTextColor = tab.color,
+                        indicatorColor = tab.color.copy(alpha = 0.1f) // Subtle indicator
                     )
                 )
             }

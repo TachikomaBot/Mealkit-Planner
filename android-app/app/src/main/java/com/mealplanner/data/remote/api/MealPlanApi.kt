@@ -18,7 +18,6 @@ interface MealPlanApi {
 
     @POST("api/meal-plan/generate")
     suspend fun generateMealPlan(
-        @Header("X-Gemini-Key") apiKey: String,
         @Body request: MealPlanRequest
     ): MealPlanResponse
 
@@ -29,7 +28,6 @@ interface MealPlanApi {
 
     @POST("api/meal-plan/generate-async")
     suspend fun startMealPlanGeneration(
-        @Header("X-Gemini-Key") apiKey: String,
         @Body request: MealPlanRequest
     ): StartJobResponse
 
@@ -45,14 +43,12 @@ interface MealPlanApi {
 
     @POST("api/meal-plan/polish-grocery-list")
     suspend fun polishGroceryList(
-        @Header("X-Gemini-Key") apiKey: String,
         @Body request: GroceryPolishRequest
     ): GroceryPolishResponse
 
     // Async grocery polish endpoints
     @POST("api/meal-plan/polish-grocery-list-async")
     suspend fun startGroceryPolish(
-        @Header("X-Gemini-Key") apiKey: String,
         @Body request: GroceryPolishRequest
     ): StartJobResponse
 

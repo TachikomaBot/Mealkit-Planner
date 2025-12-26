@@ -1,5 +1,8 @@
 package com.mealplanner.presentation.screens.home
 
+import com.mealplanner.presentation.theme.Tomato600
+import com.mealplanner.presentation.theme.Tomato700
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -62,9 +65,10 @@ fun HomeScreen(
                 },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    containerColor = Tomato600, // Explicitly Tomato
                     scrolledContainerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    titleContentColor = androidx.compose.ui.graphics.Color.White, // Always White on Tomato
+                    actionIconContentColor = androidx.compose.ui.graphics.Color.White
                 )
             )
         }
