@@ -180,6 +180,7 @@ fun HomeScreen(
         }
     }
 }
+}
 
 @Composable
 private fun PlannedRecipeItem(
