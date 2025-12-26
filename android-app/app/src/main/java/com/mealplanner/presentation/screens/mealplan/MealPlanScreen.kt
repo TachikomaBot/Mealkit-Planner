@@ -1086,10 +1086,14 @@ private fun WeeklyMealsContent(
     val progress = if (totalRecipes > 0) cookedCount.toFloat() / totalRecipes else 0f
     val allCooked = cookedCount == totalRecipes && totalRecipes > 0
 
+    // Dynamic subheader color: Darker Pacific in light mode, Lighter Pacific in dark mode
+    val subheaderColor = if (isSystemInDarkTheme()) Pacific500 else Pacific700
+    val onSubheaderColor = Color.White
+
     Column(modifier = Modifier.fillMaxSize()) {
         // Progress header
         Surface(
-            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+            color = subheaderColor,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -1103,17 +1107,24 @@ private fun WeeklyMealsContent(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = if (allCooked) "Week Complete!" else "Cooking Progress",
-                            style = MaterialTheme.typography.titleMedium
+                            style = MaterialTheme.typography.titleMedium,
+                            color = onSubheaderColor
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = "$cookedCount of $totalRecipes meals cooked",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = onSubheaderColor.copy(alpha = 0.7f)
                         )
                     }
                     if (allCooked) {
-                        Button(onClick = onStartNewPlan) {
+                        Button(
+                            onClick = onStartNewPlan,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.White,
+                                contentColor = subheaderColor
+                            )
+                        ) {
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("New Plan")
@@ -1129,8 +1140,8 @@ private fun WeeklyMealsContent(
                         .fillMaxWidth()
                         .height(8.dp)
                         .clip(RoundedCornerShape(4.dp)),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    color = Color.White,
+                    trackColor = Color.White.copy(alpha = 0.3f)
                 )
             }
         }

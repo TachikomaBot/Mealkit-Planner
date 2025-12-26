@@ -1,7 +1,11 @@
 package com.mealplanner.presentation.screens.home
 
+import com.mealplanner.presentation.theme.Tomato500
 import com.mealplanner.presentation.theme.Tomato600
 import com.mealplanner.presentation.theme.Tomato700
+
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.graphics.Color
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -123,39 +127,54 @@ private fun ThisWeekSection(
     onNavigateToMeals: () -> Unit,
     onToggleCooked: (PlannedRecipe) -> Unit
 ) {
+    // Dynamic subheader color: Darker Tomato in light mode, Lighter Tomato in dark mode
+    val subheaderColor = if (isSystemInDarkTheme()) Tomato500 else Tomato700
+    val onSubheaderColor = Color.White
+
     Column {
-        // Header
-        Row(
+        // Header Card
+        Surface(
+            color = subheaderColor,
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            shape = RoundedCornerShape(8.dp)
         ) {
-            Text(
-                text = "This Week",
-                style = MaterialTheme.typography.titleMedium
-            )
-            if (uiState.totalPlanned > 0) {
-                Text(
-                    text = "${uiState.cookedCount}/${uiState.totalPlanned} cooked",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Column(
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "This Week",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = onSubheaderColor
+                    )
+                    if (uiState.totalPlanned > 0) {
+                        Text(
+                            text = "${uiState.cookedCount}/${uiState.totalPlanned} cooked",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = onSubheaderColor.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+
+                if (uiState.totalPlanned > 0) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    // Progress bar
+                    LinearProgressIndicator(
+                        progress = { uiState.progressPercent },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        color = Color.White,
+                        trackColor = Color.White.copy(alpha = 0.3f),
+                    )
+                }
             }
         }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        if (uiState.totalPlanned > 0) {
-            // Progress bar
-            LinearProgressIndicator(
-                progress = { uiState.progressPercent },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(4.dp)),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant,
-            )
 
             Spacer(modifier = Modifier.height(16.dp))
 

@@ -1,6 +1,12 @@
 package com.mealplanner.presentation.screens.profile
 
+import com.mealplanner.presentation.theme.Sage500
 import com.mealplanner.presentation.theme.Sage600
+import com.mealplanner.presentation.theme.Sage700
+
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -64,13 +70,23 @@ fun ProfileScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            // Dynamic subheader color: Darker Sage in light mode, Lighter Sage in dark mode
+            val subheaderColor = if (isSystemInDarkTheme()) Sage500 else Sage700
+            val onSubheaderColor = androidx.compose.ui.graphics.Color.White
+
             // Tab Row
             TabRow(
                 selectedTabIndex = selectedTab.ordinal,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.primary
+                containerColor = subheaderColor,
+                contentColor = onSubheaderColor,
+                indicator = { tabPositions ->
+                    TabRowDefaults.Indicator(
+                        Modifier.tabIndicatorOffset(tabPositions[selectedTab.ordinal]),
+                        color = onSubheaderColor
+                    )
+                }
             ) {
-                ProfileTab.entries.forEach { tab ->
+                ProfileTab.values().forEach { tab ->
                     Tab(
                         selected = selectedTab == tab,
                         onClick = { viewModel.selectTab(tab) },
@@ -92,7 +108,9 @@ fun ProfileScreen(
                                 },
                                 contentDescription = null
                             )
-                        }
+                        },
+                        selectedContentColor = onSubheaderColor,
+                        unselectedContentColor = onSubheaderColor.copy(alpha = 0.7f)
                     )
                 }
             }
