@@ -11,7 +11,8 @@ data class UserPreferencesEntity(
     val dislikesJson: String = "[]",
     val summaryText: String? = null,
     val targetServings: Int = 2,
-    val geminiApiKey: String? = null
+    val geminiApiKey: String? = null,
+    val isDarkMode: Boolean? = null
 )
 
 @Entity(tableName = "preference_summary")

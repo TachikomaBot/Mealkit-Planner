@@ -55,6 +55,11 @@ interface UserRepository {
     suspend fun updateTargetServings(servings: Int)
 
     /**
+     * Update the dark mode preference (null = system default)
+     */
+    suspend fun updateIsDarkMode(isDarkMode: Boolean?)
+
+    /**
      * Get the preference summary (compacted history)
      */
     suspend fun getPreferenceSummary(): PreferenceSummary?

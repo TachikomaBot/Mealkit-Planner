@@ -102,6 +102,12 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
+    fun toggleTheme(isDarkMode: Boolean?) {
+        viewModelScope.launch {
+            preferencesUseCase.updateIsDarkMode(isDarkMode)
+        }
+    }
+
     fun addLike(ingredient: String) {
         viewModelScope.launch {
             preferencesUseCase.addLike(ingredient.trim())

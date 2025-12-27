@@ -87,6 +87,13 @@ class ManagePreferencesUseCase @Inject constructor(
     }
 
     /**
+     * Update dark mode preference
+     */
+    suspend fun updateIsDarkMode(isDarkMode: Boolean?) {
+        userRepository.updateIsDarkMode(isDarkMode)
+    }
+
+    /**
      * Rate a recipe after cooking
      */
     suspend fun rateRecipe(

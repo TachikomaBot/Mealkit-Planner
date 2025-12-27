@@ -19,7 +19,7 @@ import com.mealplanner.data.local.entity.*
         PreferenceSummaryEntity::class,
         PantryEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

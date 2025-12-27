@@ -4,11 +4,14 @@ import com.mealplanner.presentation.theme.Sage500
 import com.mealplanner.presentation.theme.Sage600
 import com.mealplanner.presentation.theme.Sage700
 
+import androidx.compose.ui.graphics.Color
+
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -122,11 +125,13 @@ fun ProfileScreen(
                         servings = preferences.targetServings,
                         likes = preferences.likes,
                         dislikes = preferences.dislikes,
+                        isDarkMode = preferences.isDarkMode,
                         onServingsChange = { viewModel.updateTargetServings(it) },
                         onAddLike = { viewModel.addLike(it) },
                         onRemoveLike = { viewModel.removeLike(it) },
                         onAddDislike = { viewModel.addDislike(it) },
-                        onRemoveDislike = { viewModel.removeDislike(it) }
+                        onRemoveDislike = { viewModel.removeDislike(it) },
+                        onThemeChanged = { viewModel.toggleTheme(it) }
                     )
                     ProfileTab.HISTORY -> HistoryTabContent(
                         mealPlanHistory = mealPlanHistory,
@@ -170,11 +175,13 @@ private fun PreferencesTabContent(
     servings: Int,
     likes: List<String>,
     dislikes: List<String>,
+    isDarkMode: Boolean?,
     onServingsChange: (Int) -> Unit,
     onAddLike: (String) -> Unit,
     onRemoveLike: (String) -> Unit,
     onAddDislike: (String) -> Unit,
-    onRemoveDislike: (String) -> Unit
+    onRemoveDislike: (String) -> Unit,
+    onThemeChanged: (Boolean?) -> Unit
 ) {
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
@@ -210,9 +217,113 @@ private fun PreferencesTabContent(
         }
 
         item {
+            ThemeSection(
+                isDarkMode = isDarkMode,
+                onThemeChanged = onThemeChanged
+            )
+        }
+
+        item {
             Spacer(modifier = Modifier.height(16.dp))
             AboutSection()
         }
+    }
+}
+
+@Composable
+private fun ThemeSection(
+    isDarkMode: Boolean?, // null = system
+    onThemeChanged: (Boolean?) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DarkMode, // Using DarkMode as generic theme icon
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "App Theme",
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                // System Default
+                ThemeOption(
+                    selected = isDarkMode == null,
+                    onClick = { onThemeChanged(null) },
+                    icon = Icons.Default.SettingsSuggest, // Auto/System icon
+                    label = "System"
+                )
+
+                // Light
+                ThemeOption(
+                    selected = isDarkMode == false,
+                    onClick = { onThemeChanged(false) },
+                    icon = Icons.Default.LightMode,
+                    label = "Light"
+                )
+
+                // Dark
+                ThemeOption(
+                    selected = isDarkMode == true,
+                    onClick = { onThemeChanged(true) },
+                    icon = Icons.Default.DarkMode,
+                    label = "Dark"
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeOption(
+    selected: Boolean,
+    onClick: () -> Unit,
+    icon: ImageVector,
+    label: String
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .background(
+                if (selected) MaterialTheme.colorScheme.primaryContainer
+                else Color.Transparent
+            )
+            .padding(12.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+            else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+            else MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

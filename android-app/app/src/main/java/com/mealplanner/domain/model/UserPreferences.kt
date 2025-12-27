@@ -7,7 +7,8 @@ data class UserPreferences(
     val likes: List<String> = emptyList(),
     val dislikes: List<String> = emptyList(),
     val targetServings: Int = 2,
-    val geminiApiKey: String? = null
+    val geminiApiKey: String? = null,
+    val isDarkMode: Boolean? = null // null = system default
 ) {
     val hasApiKey: Boolean get() = !geminiApiKey.isNullOrBlank()
 

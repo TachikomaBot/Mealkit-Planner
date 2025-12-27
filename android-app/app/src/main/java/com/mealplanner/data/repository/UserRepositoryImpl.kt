@@ -53,7 +53,8 @@ class UserRepositoryImpl @Inject constructor(
                 likesJson = json.encodeToString(preferences.likes),
                 dislikesJson = json.encodeToString(preferences.dislikes),
                 targetServings = preferences.targetServings,
-                geminiApiKey = preferences.geminiApiKey
+                geminiApiKey = preferences.geminiApiKey,
+                isDarkMode = preferences.isDarkMode
             )
         )
     }
@@ -84,6 +85,11 @@ class UserRepositoryImpl @Inject constructor(
             preferencesDao.insertPreferences(UserPreferencesEntity())
         }
         preferencesDao.updateTargetServings(servings)
+    }
+
+    override suspend fun updateIsDarkMode(isDarkMode: Boolean?) = withContext(Dispatchers.IO) {
+        val current = preferencesDao.getPreferences() ?: UserPreferencesEntity()
+        preferencesDao.insertPreferences(current.copy(isDarkMode = isDarkMode))
     }
 
     override suspend fun getPreferenceSummary(): PreferenceSummary? = withContext(Dispatchers.IO) {
@@ -136,7 +142,8 @@ class UserRepositoryImpl @Inject constructor(
             likes = likes,
             dislikes = dislikes,
             targetServings = targetServings,
-            geminiApiKey = geminiApiKey
+            geminiApiKey = geminiApiKey,
+            isDarkMode = isDarkMode
         )
     }
 
