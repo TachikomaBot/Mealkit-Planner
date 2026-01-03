@@ -819,7 +819,7 @@ export async function generateMealPlan(
   onProgress?: (event: ProgressEvent) => void
 ): Promise<MealPlanResult> {
   const targetServings = request.preferences?.targetServings ?? 2;
-  const numMeals = request.numDays ?? 12; // Default to 12 for faster generation
+  const numMeals = request.numDays ?? 16; // Default to 16 for faster generation
 
   console.log('[MealGen] Starting meal plan generation...');
   console.log('[MealGen] Preferences:', request.preferences);
