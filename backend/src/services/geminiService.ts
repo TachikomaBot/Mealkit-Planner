@@ -199,7 +199,7 @@ async function callGeminiSimple(
       temperature: 0.7, // Slightly lower for more consistent JSON output
       responseMimeType: 'application/json', // Force valid JSON output
       thinkingConfig: {
-        thinkingLevel: ThinkingLevel.LOW,
+        thinkingLevel: ThinkingLevel.MEDIUM,
       },
     },
     contents: [{ role: 'user', parts: [{ text: userPrompt }] }]
@@ -244,6 +244,9 @@ async function callGeminiWithTools(
         config: {
           systemInstruction: systemPrompt,
           tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
+          thinkingConfig: {
+            thinkingLevel: ThinkingLevel.MEDIUM,
+          },
         },
         contents: contents
       });
@@ -255,6 +258,9 @@ async function callGeminiWithTools(
         config: {
           systemInstruction: systemPrompt,
           tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
+          thinkingConfig: {
+            thinkingLevel: ThinkingLevel.MEDIUM,
+          },
         },
         contents: contents
       });
@@ -1047,7 +1053,7 @@ Return a clean, merged shopping list as JSON:
       temperature: 0.2,
       maxOutputTokens: 16000, // Increased to avoid truncation
       thinkingConfig: {
-        thinkingLevel: ThinkingLevel.LOW,
+        thinkingLevel: ThinkingLevel.MEDIUM,
       },
     }
   });
@@ -1203,7 +1209,7 @@ Respond with JSON:
         temperature: 0.1, // Very low for consistency
         maxOutputTokens: 65536, // Max tokens to prevent truncation on large lists
         thinkingConfig: {
-          thinkingLevel: ThinkingLevel.LOW,
+          thinkingLevel: ThinkingLevel.MEDIUM,
         },
       }
     });
