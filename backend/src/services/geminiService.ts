@@ -688,8 +688,40 @@ OUTPUT FORMAT for each meal:
 - servings: ${targetServings}
 - prepTimeMinutes / cookTimeMinutes: Based on combined workflow
 - ingredients: ALL ingredients from all components, scaled to ${targetServings} servings
-- steps: 5-7 main procedure cards, each with 2-4 substeps
+- steps: 5-7 main procedure cards, each with 2-4 substeps (see STEP RULES below)
 - tags: 3-4 relevant tags
+
+STEP RULES - Follow this format for professional recipe cards:
+
+Step Title Naming:
+- Step 1 should be "Mise en Place" or "Prep Work" (gathering/cutting/measuring)
+- Middle steps: "[ACTION] THE [TARGET]" format, e.g.:
+  - "Cook the Rice", "Roast the Vegetables", "Prepare the Chicken"
+  - "Make the Sauce", "Boil the Pasta", "Start the Gravy"
+- Final step should be "Plate Your Dish" or "Finish & Serve"
+
+Substep Writing Rules:
+- Use **bold** markdown for all ingredient names: "Add the **garlic** and **ginger**"
+- Use **bold** for cooking times: "Cook, **3 to 5 min.**, until golden"
+- Use **bold** for temperatures: "Preheat the oven to **450°F**" or "heat on **medium-high**"
+- Always pair times with visual cues: "Sauté, **2 to 3 min.**, until fragrant"
+- Keep substeps concise and action-oriented (start with verbs)
+- Group related actions in single substeps when logical
+
+Example step structure:
+{
+  "title": "Cook the Beef",
+  "substeps": [
+    "In a large pan, heat a drizzle of **oil** on **medium-high**.",
+    "Add the **beef** and **onions**; season with the **spices** and **S&P**.",
+    "Cook, breaking up the meat, **4 to 6 min.**, until browned and cooked through."
+  ]
+}
+
+Workflow Optimization:
+- Consider parallel cooking (e.g., "Meanwhile, boil the pasta...")
+- Use "Meanwhile" to indicate tasks that happen during wait times
+- Reserve the pan/pot instructions when needed later for sauces
 
 IMPORTANT: For ingredients with "to taste" or unmeasured quantities, use null for quantity, not a string.
 
@@ -722,17 +754,51 @@ Respond with JSON:
 {
   "meals": [
     {
-      "name": "...",
-      "description": "...",
+      "name": "Thai Basil Chicken with Jasmine Rice",
+      "description": "Fragrant stir-fried chicken with holy basil served over fluffy jasmine rice.",
       "servings": ${targetServings},
       "prepTimeMinutes": 15,
       "cookTimeMinutes": 25,
       "ingredients": [
-        {"ingredientName": "chicken", "quantity": 1, "unit": "lb", "preparation": "diced"},
+        {"ingredientName": "chicken breast", "quantity": 500, "unit": "g", "preparation": "diced"},
+        {"ingredientName": "jasmine rice", "quantity": 200, "unit": "g", "preparation": null},
+        {"ingredientName": "garlic", "quantity": 4, "unit": "cloves", "preparation": "minced"},
         {"ingredientName": "salt", "quantity": null, "unit": "to taste", "preparation": null}
       ],
-      "steps": [{"title": "Prep the Protein", "substeps": ["...", "..."]}],
-      "tags": ["quick", "thai"],
+      "steps": [
+        {
+          "title": "Mise en Place",
+          "substeps": [
+            "Dice the **chicken** into bite-sized pieces; season with **S&P**.",
+            "Mince the **garlic** and slice the **chilis** thinly.",
+            "Pick the **basil leaves** from the stems."
+          ]
+        },
+        {
+          "title": "Cook the Rice",
+          "substeps": [
+            "In a medium pot, combine the **rice** and **1½ cups water**; bring to a boil.",
+            "Reduce heat to low, cover, and simmer, **12 to 15 min.**, until tender.",
+            "Remove from heat and let sit, covered, **5 min.** Fluff with a fork."
+          ]
+        },
+        {
+          "title": "Stir-Fry the Chicken",
+          "substeps": [
+            "In a large pan or wok, heat **2 tbsp oil** on **high**.",
+            "Add the **chicken** and cook, **3 to 4 min.**, until golden and cooked through.",
+            "Add the **garlic** and **chilis**; stir-fry, **30 sec.**, until fragrant."
+          ]
+        },
+        {
+          "title": "Plate Your Dish",
+          "substeps": [
+            "Divide the **rice** between your plates.",
+            "Top with the **stir-fried chicken** and garnish with **basil leaves**. Bon appétit!"
+          ]
+        }
+      ],
+      "tags": ["quick", "thai", "stir-fry"],
       "usesExpiringIngredients": false,
       "expiringIngredientsUsed": [],
       "sourceRecipeIds": [123]
