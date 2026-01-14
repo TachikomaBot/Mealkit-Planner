@@ -1,5 +1,6 @@
 package com.mealplanner.presentation.screens.settings
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -21,6 +22,8 @@ fun SettingsScreen(
 ) {
     val sampleDataState by viewModel.sampleDataState.collectAsState()
     val pantryStaplesState by viewModel.pantryStaplesState.collectAsState()
+    val testModeState by viewModel.testModeState.collectAsState()
+    val isTestModeEnabled by viewModel.isTestModeEnabled.collectAsState()
 
     // Show snackbar for sample data results
     val snackbarHostState = remember { SnackbarHostState() }
@@ -65,6 +68,26 @@ fun SettingsScreen(
         }
     }
 
+    LaunchedEffect(testModeState) {
+        when (val state = testModeState) {
+            is TestModeState.Success -> {
+                snackbarHostState.showSnackbar(
+                    message = state.message,
+                    duration = SnackbarDuration.Short
+                )
+                viewModel.dismissTestModeState()
+            }
+            is TestModeState.Error -> {
+                snackbarHostState.showSnackbar(
+                    message = "Error: ${state.message}",
+                    duration = SnackbarDuration.Short
+                )
+                viewModel.dismissTestModeState()
+            }
+            else -> {}
+        }
+    }
+
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
     Scaffold(
@@ -97,14 +120,36 @@ fun SettingsScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Developer Tools Section
+            // Test Mode Section
             item {
-                DeveloperToolsSection(
+                TestModeSection(
+                    isTestModeEnabled = isTestModeEnabled,
+                    isLoading = testModeState is TestModeState.Loading,
                     isSampleDataLoading = sampleDataState is SampleDataState.Loading,
                     isPantryStaplesLoading = pantryStaplesState is PantryStaplesState.Loading,
+                    onToggleTestMode = {
+                        if (isTestModeEnabled) {
+                            viewModel.disableTestMode()
+                        } else {
+                            viewModel.enableTestMode()
+                        }
+                    },
                     onLoadSampleData = { viewModel.loadSampleData() },
-                    onLoadPantryStaples = { viewModel.loadPantryStaples() }
+                    onLoadPantryStaples = { viewModel.loadPantryStaples() },
+                    onClearData = { viewModel.clearAllData() }
                 )
+            }
+
+            // Developer Tools Section (hidden when in test mode since test mode includes all tools)
+            if (!isTestModeEnabled) {
+                item {
+                    DeveloperToolsSection(
+                        isSampleDataLoading = sampleDataState is SampleDataState.Loading,
+                        isPantryStaplesLoading = pantryStaplesState is PantryStaplesState.Loading,
+                        onLoadSampleData = { viewModel.loadSampleData() },
+                        onLoadPantryStaples = { viewModel.loadPantryStaples() }
+                    )
+                }
             }
 
             // About section
@@ -227,6 +272,198 @@ private fun DeveloperToolsSection(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+@Composable
+private fun TestModeSection(
+    isTestModeEnabled: Boolean,
+    isLoading: Boolean,
+    isSampleDataLoading: Boolean,
+    isPantryStaplesLoading: Boolean,
+    onToggleTestMode: () -> Unit,
+    onLoadSampleData: () -> Unit,
+    onLoadPantryStaples: () -> Unit,
+    onClearData: () -> Unit
+) {
+    val anyLoading = isLoading || isSampleDataLoading || isPantryStaplesLoading
+    val borderColor = if (isTestModeEnabled) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isTestModeEnabled) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            }
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            width = if (isTestModeEnabled) 2.dp else 1.dp,
+            color = borderColor
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            // Header with toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Science,
+                        contentDescription = null,
+                        tint = if (isTestModeEnabled) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Test Mode",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+
+                Switch(
+                    checked = isTestModeEnabled,
+                    onCheckedChange = { onToggleTestMode() },
+                    enabled = !anyLoading
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = if (isTestModeEnabled) {
+                    "Test Mode is active. Data is temporary and will be cleared when disabled."
+                } else {
+                    "Enable Test Mode to experiment with sample data without affecting your real data."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            // Show data loading buttons when test mode is enabled
+            if (isTestModeEnabled) {
+                Spacer(modifier = Modifier.height(16.dp))
+
+                HorizontalDivider()
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Load Sample Data button
+                Button(
+                    onClick = onLoadSampleData,
+                    enabled = !anyLoading,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    if (isSampleDataLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Loading...")
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.DataArray,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Load Sample Data")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = "Creates meal plan, pantry items, and shopping list",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Load Pantry Staples button
+                OutlinedButton(
+                    onClick = onLoadPantryStaples,
+                    enabled = !anyLoading,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (isPantryStaplesLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Loading...")
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Kitchen,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Load Pantry Staples")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = "Adds common staples (oils, spices, flour, rice, etc.)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Clear Data button
+                OutlinedButton(
+                    onClick = onClearData,
+                    enabled = !anyLoading,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = MaterialTheme.colorScheme.error,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Clearing...")
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.DeleteForever,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Clear All Data")
+                    }
+                }
+            }
         }
     }
 }

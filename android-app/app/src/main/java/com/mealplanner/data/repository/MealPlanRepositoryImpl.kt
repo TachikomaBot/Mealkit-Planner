@@ -250,4 +250,10 @@ class MealPlanRepositoryImpl @Inject constructor(
     override fun observeAverageRating(): Flow<Double?> {
         return mealPlanDao.observeAverageRating()
     }
+
+    override suspend fun clearAll() = withContext(Dispatchers.IO) {
+        mealPlanDao.deleteAllMealPlans()
+        mealPlanDao.deleteAllPlannedRecipes()
+        mealPlanDao.deleteAllHistory()
+    }
 }

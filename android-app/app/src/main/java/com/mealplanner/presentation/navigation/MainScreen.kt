@@ -1,5 +1,7 @@
 package com.mealplanner.presentation.navigation
 
+import android.util.Base64
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -18,12 +20,18 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Kitchen
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.*
-import com.mealplanner.presentation.theme.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.ViewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -41,10 +49,16 @@ import com.mealplanner.presentation.screens.profile.ProfileScreen
 import com.mealplanner.presentation.screens.recipe.RecipeDetailScreen
 import com.mealplanner.presentation.screens.settings.SettingsScreen
 import com.mealplanner.presentation.screens.shopping.ShoppingScreen
+import com.mealplanner.presentation.theme.*
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import android.util.Base64
+import javax.inject.Inject
 
 // Bottom navigation tabs
 sealed class BottomNavTab(
@@ -104,17 +118,56 @@ val bottomNavTabs = listOf(
     BottomNavTab.Profile
 )
 
+// ViewModel to observe test mode state
+@HiltViewModel
+class MainScreenViewModel @Inject constructor(
+    dataStore: DataStore<Preferences>
+) : ViewModel() {
+    companion object {
+        private val TEST_MODE_KEY = booleanPreferencesKey("test_mode_enabled")
+    }
+
+    val isTestModeEnabled: StateFlow<Boolean> = dataStore.data
+        .map { preferences -> preferences[TEST_MODE_KEY] ?: false }
+        .stateIn(
+            scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main),
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = false
+        )
+}
+
 @Composable
-fun MainScreen() {
+fun MainScreen(
+    viewModel: MainScreenViewModel = hiltViewModel()
+) {
     val navController = rememberNavController()
     val json = Json { ignoreUnknownKeys = true }
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
+    val isTestModeEnabled by viewModel.isTestModeEnabled.collectAsState()
 
     // Alternative layout: simpler Column instead of Scaffold
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
+        // Test Mode Banner
+        if (isTestModeEnabled) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.primary)
+                    .padding(vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "TEST MODE - Data is temporary",
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
         // Main content area
         Box(
             modifier = Modifier

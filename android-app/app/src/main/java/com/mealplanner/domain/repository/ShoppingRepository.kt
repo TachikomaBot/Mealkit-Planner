@@ -75,4 +75,9 @@ interface ShoppingRepository {
      * and categorize items for easier shopping
      */
     suspend fun polishShoppingList(mealPlanId: Long): Result<ShoppingList>
+
+    /**
+     * Clear all shopping list data
+     */
+    suspend fun clearAll()
 }

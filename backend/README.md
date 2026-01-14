@@ -2,13 +2,23 @@
 
 Node.js/Express backend for the Meal Planner app. Provides recipe search, meal plan generation, and image caching services.
 
-## Setup
+## Deployment
+
+**Production:** Hosted on Railway with auto-deploy from GitHub
+- Project: https://railway.com/project/9d51de57-565f-445b-a06d-49baa2b5faa0
+
+The Railway deployment:
+- Auto-deploys on push to main branch
+- Uses Nixpacks for building
+- Runs `npm run build && npm start`
+
+## Local Development
 
 ```bash
 cd backend
 npm install
 
-# Copy recipe data from frontend
+# Copy recipe data from frontend public folder
 cp ../public/data/recipes.json data/
 
 # Start development server
@@ -100,6 +110,7 @@ Generate a new image (placeholder - future Gemini integration).
 
 Create `.env` file (see `.env.example`):
 - `PORT` - Server port (default 3001)
+- `GEMINI_API_KEY` - Optional default Gemini key (clients can also pass via header)
 
 ## Architecture
 
@@ -116,6 +127,15 @@ backend/
 │       ├── recipeService.ts  # Recipe data & search
 │       └── geminiService.ts  # AI meal generation
 ├── data/
-│   └── recipes.json      # Recipe dataset (copy from frontend)
+│   └── recipes.json      # Recipe dataset (copy from public/data/)
+├── railway.json          # Railway deployment config
 └── package.json
 ```
+
+## Android Client Configuration
+
+The Android app connects to the backend via Retrofit. For development:
+- Emulator uses `10.0.2.2:3001` to reach host machine's localhost
+- Production uses the Railway deployment URL
+
+Configure the base URL in `android-app/app/src/main/java/com/mealplanner/di/NetworkModule.kt`

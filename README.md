@@ -1,428 +1,212 @@
-# Meal Kit App - Architecture Document
+# Meal Planner App
 
-> Internal reference for AI assistants and developers working on this codebase.
+> Native Android meal planning app with AI-powered recipe generation.
 
 ## Overview
 
-A meal planning app for a **single user** on **Android** (sideloaded APK). The user selects 6 dinner recipes from a curated pool each week, generating a shopping list. After shopping, ingredients are added to the pantry. When a recipe is cooked, ingredients are auto-deducted from pantry.
+A meal planning app for a **single user** on **Android**. The user selects 6 dinner recipes from AI-generated suggestions each week, generating a shopping list. After shopping, ingredients are added to the pantry. When a recipe is cooked, ingredients are auto-deducted from pantry.
 
-**Target: 1.0 Release** - Focused, minimal feature set.
+**Architecture:** Native Kotlin (Jetpack Compose) + Node.js backend on Railway
+
+---
+
+## Project Structure
+
+```
+Mealkit-Planner/
+├── android-app/          # Native Android app (Kotlin + Jetpack Compose)
+├── backend/              # Node.js/Express API (hosted on Railway)
+├── public/data/          # Recipe dataset JSON (copied to backend)
+├── scripts/              # Recipe import scripts
+├── Todo.md               # Current feature backlog
+└── NATIVE_KOTLIN_PROGRESS.md  # Kotlin rewrite progress tracker
+```
+
+---
+
+## Quick Start
+
+### Backend (Railway - Production)
+
+The backend is deployed on Railway and auto-deploys from GitHub:
+- **Project:** https://railway.com/project/9d51de57-565f-445b-a06d-49baa2b5faa0
+
+### Backend (Local Development)
+
+```bash
+cd backend
+npm install
+cp ../public/data/recipes.json data/
+npm run dev
+# Runs on http://localhost:3001
+```
+
+### Android App
+
+1. Open `android-app/` in Android Studio
+2. Wait for Gradle sync
+3. For local backend: App uses `10.0.2.2:3001` (emulator localhost)
+4. Run on emulator or device
+
+---
+
+## Architecture
+
+### Android App (`android-app/`)
+
+Native Kotlin with Jetpack Compose, following Clean Architecture:
+
+```
+app/src/main/java/com/mealplanner/
+├── di/                  # Hilt dependency injection modules
+├── data/
+│   ├── local/           # Room database, DAOs, entities
+│   ├── remote/          # Retrofit APIs, DTOs
+│   └── repository/      # Repository implementations
+├── domain/              # Models, repository interfaces, use cases
+├── presentation/
+│   ├── components/      # Reusable UI components
+│   ├── theme/           # Compose theme (colors, typography)
+│   ├── navigation/      # NavGraph
+│   └── screens/         # UI screens
+└── service/             # Foreground service for AI generation
+```
+
+**Key Technologies:**
+- Jetpack Compose (UI)
+- Hilt (Dependency Injection)
+- Room (Local Database)
+- Retrofit (API Client)
+- Coil (Image Loading)
+
+### Backend (`backend/`)
+
+Node.js/Express API providing:
+- Recipe search from 20K+ Food.com dataset
+- AI meal plan generation via Gemini (SSE streaming)
+- Image caching (planned)
+
+See [backend/README.md](backend/README.md) for API documentation.
 
 ---
 
 ## User Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           WEEKLY CYCLE                                   │
-└─────────────────────────────────────────────────────────────────────────┘
-
-  Friday/Saturday: PLAN
-  ┌────────────────────────────────────────────────────────────────────┐
-  │  1. User taps "Generate Meal Plan"                                 │
-  │  2. App queries recipe dataset (20000+ recipes in IndexedDB)       │
-  │  3. Scores recipes by: pantry matches, learned preferences,        │
-  │     cuisine/protein diversity, avoiding recent recipes             │
-  │  4. Presents 24 diverse options                                    │
-  │  5. User selects 6 favorites                                       │
-  │  6. (Optional) Gemini generates recipe images                      │
-  │  7. User confirms → creates MealPlan + ShoppingList                │
-  └────────────────────────────────────────────────────────────────────┘
-           │
-           ▼
-  Weekend: SHOP
-  ┌────────────────────────────────────────────────────────────────────┐
-  │  1. User views shopping list (organized by store section)          │
-  │  2. "Start Shopping" mode - tap items as found                     │
-  │  3. All items checked → "Complete Shopping Trip"                   │
-  │  4. Checked items auto-added to Pantry with default expiry dates   │
-  │  5. Shopping list cleared                                          │
-  └────────────────────────────────────────────────────────────────────┘
-           │
-           ▼
-  Weeknights: COOK
-  ┌────────────────────────────────────────────────────────────────────┐
-  │  1. User picks a recipe from meal plan (any day, no schedule)      │
-  │  2. Views recipe detail (ingredients + steps)                      │
-  │  3. Marks recipe as "Cooked"                                       │
-  │  4. App auto-deducts ingredients from pantry                       │
-  │  5. User can rate recipe (affects future recommendations)          │
-  │  6. 2 servings = 1 meal + 1 leftover (12 meals from 6 recipes)     │
-  └────────────────────────────────────────────────────────────────────┘
+Friday/Saturday: PLAN
+┌────────────────────────────────────────────────────────────────────┐
+│  1. User taps "Generate Meal Plan"                                 │
+│  2. Backend queries recipe dataset + Gemini AI                     │
+│  3. Presents 24 diverse meal options (SSE streaming progress)      │
+│  4. User selects 6 favorites                                       │
+│  5. Confirms → creates MealPlan + generates ShoppingList           │
+└────────────────────────────────────────────────────────────────────┘
+         │
+         ▼
+Weekend: SHOP
+┌────────────────────────────────────────────────────────────────────┐
+│  1. User views shopping list (organized by store section)          │
+│  2. "Shopping Mode" - tap items as found in store                  │
+│  3. All items checked → "Complete Shopping Trip"                   │
+│  4. Checked items auto-added to Pantry                             │
+└────────────────────────────────────────────────────────────────────┘
+         │
+         ▼
+Weeknights: COOK
+┌────────────────────────────────────────────────────────────────────┐
+│  1. User picks a recipe from meal plan                             │
+│  2. Views recipe detail (ingredients + steps)                      │
+│  3. Marks recipe as "Cooked"                                       │
+│  4. App auto-deducts ingredients from pantry                       │
+│  5. User rates recipe (affects future recommendations)             │
+│  6. 2 servings = dinner + leftover lunch                           │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Architecture Layers
+## Database Schema (Room)
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                              UI (React)                                  │
-│  pages/          Plan, Shop, Pantry, Home, RecipeDetail, Settings       │
-│  components/     Layout, SearchBar, ApiKeyModal                         │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           Services Layer                                 │
-│  services/recipeData.ts    Recipe dataset queries, pool generation      │
-│  api/claude.ts             LLM API (currently unused for recipes)       │
-│  api/gemini.ts             Image generation for recipe cards            │
-│  native/index.ts           Capacitor wrappers (notifications, etc.)     │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Database (Dexie/IndexedDB)                       │
-│  db/index.ts               Schema, CRUD helpers, shopping list logic    │
-│  db/types.ts               TypeScript interfaces                        │
-│  db/ingredients.ts         Ingredient normalization (250+ mappings)     │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Static Data (public/)                            │
-│  public/data/recipes.json   20000 meal recipes (~60MB)                  │
-│  Categories: dinner, lunch, side, soup, salad                           │
-│  Loaded into IndexedDB on first app open                                │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+| Entity | Purpose |
+|--------|---------|
+| `PantryItem` | Pantry inventory with quantities, categories, expiry |
+| `Recipe` | Saved recipes from selections |
+| `MealPlan` | Weekly plans with recipe references |
+| `DayPlan` | Individual day within a meal plan |
+| `ShoppingItem` | Shopping list items with check state |
+| `RecipeHistory` | Cooking history with ratings |
+| `UserPreferences` | Taste profile (likes, dislikes) |
 
 ---
 
-## Database Schema (Dexie v4)
+## Key Screens
 
-| Table             | Purpose                                           | Key Fields |
-|-------------------|---------------------------------------------------|------------|
-| `ingredients`     | Pantry inventory                                  | name, quantity, category, expiryDate, lastStockCheck |
-| `recipes`         | User's saved recipes (from selections)            | name, ingredients[], steps[], tags[] |
-| `recipeHistory`   | Cooking history + ratings                         | recipeName, rating, wouldMakeAgain |
-| `mealPlans`       | Weekly plans                                      | weekOf, recipes[] |
-| `shoppingList`    | Current shopping list items                       | ingredientName, quantity, checked |
-| `recipeDataset`   | Imported Food.com recipes                         | sourceId, name, cuisines[], dietaryFlags[] |
-| `imageCache`      | AI-generated recipe images                        | recipeName, imageDataUrl |
-| `planSessionState`| Persists recipe pool if user navigates away       | recipePool (JSON), selectedIndices |
-| `preferenceSummary`| Compacted taste preferences from rated history   | summary, likes[], dislikes[], entriesProcessed |
+| Screen | Purpose |
+|--------|---------|
+| `HomeScreen` | Dashboard with week overview, quick stats, actions |
+| `MealsScreen` | Generate/browse/select recipes, confirm meal plan |
+| `ShoppingScreen` | Shopping list with shopping mode for in-store use |
+| `PantryScreen` | Inventory management with water-level quantity cards |
+| `RecipeDetailScreen` | Full recipe view, mark cooked, rate |
+| `ProfileScreen` | Preferences, history, stats (tabbed) |
+| `SettingsScreen` | API key config, preferences |
 
 ---
 
-## Key Files Reference
+## Current Status
 
-### Pages (src/pages/)
+See [NATIVE_KOTLIN_PROGRESS.md](NATIVE_KOTLIN_PROGRESS.md) for detailed progress.
 
-| File              | Purpose |
-|-------------------|---------|
-| `Plan.tsx`        | Main workflow: generate pool → select 6 → confirm |
-| `Shop.tsx`        | Shopping list with "shopping mode" for in-store use |
-| `Pantry.tsx`      | View/manage pantry inventory |
-| `RecipeDetail.tsx`| View recipe, mark as cooked, rate |
-| `Home.tsx`        | Dashboard with current week status |
-| `Settings.tsx`    | API keys, preferences |
+**Completed:**
+- Native Kotlin app with all core screens
+- Backend with recipe search and AI generation
+- Foreground service for background generation
+- Room database with full schema
+- Shopping → Pantry flow
+- Recipe rating and history
 
-### Services (src/services/)
-
-| File                       | Purpose |
-|----------------------------|---------|
-| `recipeData.ts`            | `generateRecipePoolFromDataset()` - main recipe selection logic |
-|                            | `searchRecipes()` - generic recipe queries |
-|                            | `datasetToGeneratedRecipe()` - format conversion |
-| `shoppingConsolidation.ts` | `consolidateShoppingList()` - Gemini-powered ingredient consolidation |
-|                            | Handles unit conversion, pantry subtraction, categorization |
-
-### Database (src/db/)
-
-| File              | Purpose |
-|-------------------|---------|
-| `index.ts`        | Schema, CRUD functions, shopping list generation |
-|                   | `generateShoppingList()` - aggregates recipe ingredients, subtracts pantry |
-|                   | `markRecipeCooked()` - updates history, deducts pantry |
-| `types.ts`        | Core interfaces (Ingredient, Recipe, MealPlan, etc.) |
-| `ingredients.ts`  | `normalizeIngredientName()` - canonical mappings |
-|                   | `detectCategory()` - produce/protein/dairy/etc. |
-
-### API Integrations (src/api/)
-
-| File              | Purpose |
-|-------------------|---------|
-| `gemini.ts`       | Recipe image generation (optional) |
-| `claude.ts`       | LLM-based recipe generation (legacy, not used in 1.0) |
-
-### Build Tools (scripts/)
-
-| File                  | Purpose |
-|-----------------------|---------|
-| `import-recipes.ts`   | Parse Food.com CSV → JSON |
-|                       | `npm run import:recipes:meals` → public/data/recipes.json |
+**In Progress (see Todo.md):**
+- Pantry sync improvements (confirmation screens before add/deduct)
+- Ingredient substitution
+- Recipe units refinement
 
 ---
 
-## Recipe Selection Algorithm
-
-Located in `src/services/recipeData.ts`:
-
-```
-generateRecipePoolFromDataset(pantryState, recentRecipes, preferences)
-│
-├── 1. Score all recipes (scoreRecipe)
-│   ├── Exclude recipes with avoided ingredients (score = 0)
-│   ├── Exclude recently cooked (by name hash)
-│   ├── Boost +0.3 for 2-4 pantry matches
-│   ├── Boost +0.2 for liked tags/cuisines
-│   ├── Penalty -0.3 for disliked tags/cuisines
-│   └── Add small random factor (0-0.2)
-│
-├── 2. Select with diversity constraints (selectDiverseRecipes)
-│   ├── Max 6 per cuisine type
-│   ├── Max 6 per protein type (chicken/beef/pork/seafood/vegetarian)
-│   └── Early picks are strict, later picks are lenient
-│
-└── 3. Pick default 6 (selectDefaultSix)
-    └── Ensure variety in first 4 picks (different proteins/cuisines)
-```
-
----
-
-## Shopping List Generation
-
-Located in `src/services/shoppingConsolidation.ts` (Gemini-powered):
-
-```
-consolidateShoppingList(rawIngredients, pantryItems)
-│
-├── 1. Send to Gemini Flash with structured prompt
-│   ├── Raw ingredients from all recipes with recipe names
-│   ├── Current pantry state
-│   └── User's unit system preference (metric/imperial)
-│
-├── 2. Gemini intelligently:
-│   ├── Consolidates similar ingredients ("100g chopped carrots" + "2 julienned carrots" → "3 medium carrots")
-│   ├── Converts to purchasable units (cups → heads, grams → medium)
-│   ├── Subtracts pantry items (500g chicken - 400g needed = skip)
-│   ├── Categorizes for store layout (Produce, Protein, Dairy, etc.)
-│   └── Respects unit system (metric: grams, imperial: pounds)
-│
-└── 3. Returns structured JSON with name, quantity, unit, category, notes
-```
-
-### Manual Shopping Items
-
-Users can add non-food items (paper towels, cleaning supplies) via the Shop page:
-- Items with `mealPlanId: 0` are manual items
-- Categorized as "Household" by default
-- Skipped when adding to pantry after shopping
-
----
-
-## Check Stock Feature
-
-Located in `src/pages/Pantry.tsx` and `src/utils/scheduling.ts`:
-
-### Pantry Filter
-
-The "Check Stock" pseudo-category filter highlights perishable items that may need verification before meal planning:
-
-```
-needsStockCheck(ingredient) → boolean
-│
-├── Only checks perishables: protein, dairy, produce
-│
-├── Returns true if ANY of:
-│   ├── Expiring within 3 days
-│   ├── Added more than 3 days ago (freshness uncertain)
-│   └── Partially consumed (quantityRemaining < quantityInitial)
-│
-└── Displayed with warning badge showing count
-```
-
-### Pre-Planning Notification
-
-The evening before scheduled meal generation, the app sends a reminder notification:
-
-```
-scheduleCheckStockReminder(settings)
-│
-├── Scheduled for 6 PM the day before meal generation
-│   (e.g., Friday 6 PM if generation is Saturday morning)
-│
-├── Notification body shows count of items needing check
-│
-└── Tapping notification opens Pantry with "Check Stock" filter
-    └── Deep link via localStorage('pantry_initial_filter')
-```
-
----
-
-## User Settings
-
-Located in `src/utils/settings.ts`:
-
-| Setting | Purpose | Default |
-|---------|---------|---------|
-| `unitSystem` | Metric (g, kg, mL) or Imperial (oz, lb, cups) | `'metric'` |
-| `schedule.enabled` | Enable automatic meal generation | `false` |
-| `schedule.dayOfWeek` | Day for meal generation (0=Sun, 6=Sat) | `6` (Saturday) |
-| `schedule.timeOfDay` | Hour for generation (24h format) | `9` (9 AM) |
-| `imageCacheExpirationDays` | Days before cached images expire | `30` |
-
-Unit system preference is passed to Gemini for shopping list consolidation, ensuring quantities display in user's preferred units.
-
----
-
-## 1.0 Roadmap
-
-### Current State (Working)
-
-- [x] Recipe dataset import (20000 meal recipes: dinner, lunch, side, soup, salad)
-- [x] Dataset-based recipe pool generation
-- [x] Recipe selection UI (24 options → pick 6)
-- [x] Shopping list generation with unit conversion
-- [x] Gemini-powered shopping list consolidation
-- [x] Manual shopping items (household goods)
-- [x] Shopping mode with check-off
-- [x] Complete shopping → add to pantry
-- [x] Pantry management UI
-- [x] Check Stock filter for perishable verification
-- [x] Pre-planning notification (check stock reminder)
-- [x] Recipe detail view
-- [x] Recipe image generation (Gemini)
-- [x] Preference learning from ratings
-- [x] Preference history compaction (Gemini summarization)
-- [x] Basic ingredient deduction on cook
-- [x] Unit system preference (metric/imperial)
-
-### Needs Work (1.0 Blockers)
-
-- [ ] **Ingredient deduction override**: When marking cooked, let user edit quantities before deducting
-- [ ] **Recipe filtering**: Surface "quick" vs "weekend" filters more prominently
-- [ ] **Onboarding**: First-run flow to set up pantry staples
-- [ ] **Capacitor removal** (optional): If native features aren't needed, simplify to PWA
-
-### Nice-to-Have (Post 1.0)
-
-- Specific day scheduling for meals
-- Batch cooking / prep recipes
-- Multi-week planning
-- Recipe URL import
-- Sharing shopping list
-- Grocery delivery integration
-
----
-
-## Build & Development
-
-```bash
-# Install dependencies
-npm install
-
-# Development server
-npm run dev
-
-# Import recipe dataset (required for first run)
-npm run import:recipes:meals
-
-# Build for production
-npm run build
-
-# Sync to Android
-npx cap sync android
-```
-
-### Recipe Data Pipeline
-
-```
-Food.com CSV (576K recipes)
-    │
-    ▼ npm run import:recipes:meals
-    │ (filters to dinner, lunch, side, soup, salad categories, limit 20000)
-    │
-    ▼ parseIngredientString()
-    │ "1 (14 ounce) can diced tomatoes" → {qty: 14, unit: "oz", name: "canned diced tomatoes"}
-    │
-    ▼ normalizeIngredientName()
-    │ "garlic cloves" → "garlic"
-    │
-    ▼ public/data/recipes.json (20000 recipes, ~60MB)
-    │
-    ▼ Loaded into IndexedDB on app open
-```
-
----
-
-## API Keys (Optional)
+## API Keys
 
 | Service | Purpose | Required? |
 |---------|---------|-----------|
-| Gemini  | Recipe images + Shopping list consolidation + Preference summarization | Recommended (fallback logic exists) |
+| Gemini | AI meal generation, recipe images | Yes (for AI features) |
 
-Keys are stored in localStorage and configured via Settings page.
-
-Without Gemini key:
-- Recipe images show placeholder icons
-- Shopping list uses basic aggregation without intelligent consolidation
-- Preference history is not compacted (continues to grow)
+Configure in Settings screen. Without Gemini:
+- Can still browse/search recipes manually
+- No AI-powered meal plan generation
 
 ---
 
-## File Structure
+## Development Notes
 
-```
-d:\Shopping App\
-├── public/
-│   └── data/
-│       └── recipes.json           # Recipe dataset (dinner, lunch, side, soup, salad)
-├── scripts/
-│   └── import-recipes.ts          # CSV → JSON converter
-├── src/
-│   ├── api/
-│   │   ├── claude.ts              # LLM (legacy)
-│   │   └── gemini.ts              # Image generation
-│   ├── components/
-│   │   ├── Layout.tsx             # Bottom nav
-│   │   └── SearchBar.tsx
-│   ├── db/
-│   │   ├── index.ts               # Database + helpers
-│   │   ├── types.ts               # TypeScript interfaces
-│   │   └── ingredients.ts         # Normalization rules
-│   ├── native/
-│   │   └── index.ts               # Capacitor wrappers
-│   ├── pages/
-│   │   ├── Plan.tsx               # Main workflow
-│   │   ├── Shop.tsx               # Shopping list
-│   │   ├── Pantry.tsx             # Inventory
-│   │   ├── RecipeDetail.tsx       # Recipe view + cook
-│   │   └── ...
-│   ├── services/
-│   │   ├── recipeData.ts          # Recipe queries
-│   │   └── shoppingConsolidation.ts # Gemini shopping list
-│   └── utils/
-│       ├── settings.ts            # Local settings
-│       └── scheduling.ts          # Background tasks
-├── android/                        # Capacitor Android project
-├── package.json
-├── vite.config.ts
-└── ARCHITECTURE.md                 # This file
-```
+1. **Backend must be running** for meal generation. Either:
+   - Use Railway deployment (production)
+   - Run locally with `npm run dev` in `backend/`
+
+2. **Recipe dataset** - 20K+ recipes from Food.com, stored in `backend/data/recipes.json`
+
+3. **Emulator networking** - Android emulator uses `10.0.2.2` to reach host localhost
+
+4. **Foreground service** - AI generation runs in a foreground service so it continues when app is backgrounded
 
 ---
 
-## Notes for AI Assistants
+## Build & Release
 
-1. **Recipe generation is now database-based**, not LLM-based. The `generateRecipePoolPhased()` in `claude.ts` is legacy code.
+```bash
+# Debug build
+cd android-app
+./gradlew assembleDebug
 
-2. **Shopping list consolidation uses Gemini** (`src/services/shoppingConsolidation.ts`). The old `generateShoppingList()` in `db/index.ts` is a fallback when no API key is configured. Gemini handles:
-   - Intelligent ingredient consolidation (combining "diced carrots" + "julienned carrots")
-   - Unit conversion to purchasable quantities
-   - Pantry subtraction with fuzzy matching
-   - Store section categorization
+# Release build (requires signing config)
+./gradlew assembleRelease
+```
 
-3. **Ingredient normalization happens in two places**:
-   - Import time: `scripts/import-recipes.ts` uses `db/ingredients.ts`
-   - Shopping list: Gemini handles normalization during consolidation
-
-4. **The Capacitor setup is for Android only**. There's no iOS or web deployment target. If Capacitor adds complexity without benefit, it could be removed in favor of a simpler WebView wrapper or PWA.
-
-5. **Recipe images are optional**. The Gemini API generates them, but the app works fine with placeholder icons if no API key is set.
-
-6. **Check Stock notifications** require Capacitor's LocalNotifications plugin. They're scheduled via `scheduleCheckStockReminder()` in `scheduling.ts` when the user enables automatic meal generation in Settings.
-
-7. **Preference history compaction** uses Gemini Flash to summarize old recipe ratings into a prose summary with explicit likes/dislikes lists. Triggered automatically when `recipeHistory` exceeds 50 entries. The 20 most recent entries are kept for granular scoring; older entries are compacted into `preferenceSummary`.
+APK output: `android-app/app/build/outputs/apk/`

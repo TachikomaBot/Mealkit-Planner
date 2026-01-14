@@ -378,4 +378,8 @@ class ShoppingRepositoryImpl @Inject constructor(
                 pantryItem.quantityRemaining > 0 && !pantryItem.isLowStock
         }
     }
+
+    override suspend fun clearAll() = withContext(Dispatchers.IO) {
+        shoppingDao.deleteAll()
+    }
 }

@@ -45,4 +45,7 @@ interface ShoppingDao {
 
     @Query("UPDATE shopping_items SET polishedDisplayQuantity = :polishedDisplayQuantity, category = :category WHERE id = :itemId")
     suspend fun updatePolishedData(itemId: Long, polishedDisplayQuantity: String, category: String)
+
+    @Query("DELETE FROM shopping_items")
+    suspend fun deleteAll()
 }

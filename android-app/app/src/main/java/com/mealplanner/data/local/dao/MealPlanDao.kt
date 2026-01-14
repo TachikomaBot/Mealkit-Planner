@@ -72,4 +72,14 @@ interface MealPlanDao {
 
     @Query("SELECT AVG(rating) FROM recipe_history WHERE rating IS NOT NULL")
     fun observeAverageRating(): Flow<Double?>
+
+    // Clear all data (for test mode)
+    @Query("DELETE FROM meal_plans")
+    suspend fun deleteAllMealPlans()
+
+    @Query("DELETE FROM planned_recipes")
+    suspend fun deleteAllPlannedRecipes()
+
+    @Query("DELETE FROM recipe_history")
+    suspend fun deleteAllHistory()
 }

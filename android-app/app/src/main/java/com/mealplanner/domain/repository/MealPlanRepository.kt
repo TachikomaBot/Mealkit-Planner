@@ -98,4 +98,9 @@ interface MealPlanRepository {
      * Observe average recipe rating
      */
     fun observeAverageRating(): Flow<Double?>
+
+    /**
+     * Clear all meal plan data (plans, recipes, history)
+     */
+    suspend fun clearAll()
 }
