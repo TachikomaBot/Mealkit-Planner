@@ -1553,16 +1553,25 @@ export async function processSubstitution(
 
   const ai = new GoogleGenAI({ apiKey });
 
+  // Format steps for the prompt
+  const stepsText = request.steps.map((step, i) =>
+    `Step ${i + 1}: ${step.title}\n${step.substeps.map(s => `  - ${s}`).join('\n')}`
+  ).join('\n\n');
+
   const prompt = `You are a culinary expert helping with ingredient substitutions in recipes.
 
 TASK: A cook is substituting an ingredient in a recipe. You must:
 1. Determine if the recipe NAME should be updated
 2. CONVERT the ingredient quantity appropriately for the substitution
-3. Provide any helpful cooking notes
+3. UPDATE any recipe instructions that reference the original ingredient
+4. Provide any helpful cooking notes
 
 RECIPE: "${request.recipeName}"
 ORIGINAL INGREDIENT: ${request.originalIngredient.quantity} ${request.originalIngredient.unit} ${request.originalIngredient.name}
 NEW INGREDIENT: ${request.newIngredientName}
+
+RECIPE STEPS:
+${stepsText}
 
 CRITICAL - DETECT SUBSTITUTION TYPE FROM INGREDIENT NAMES:
 - Look at BOTH the original name ("${request.originalIngredient.name}") and new name ("${request.newIngredientName}")
@@ -1593,6 +1602,15 @@ RECIPE NAME UPDATES:
 - "Honey Garlic Salmon" + (Salmon → Tilapia) = "Honey Garlic Tilapia"
 - "Classic Tomato Pasta" + (Fresh Basil → Dried Basil) = "Classic Tomato Pasta" (unchanged - basil not in name)
 
+RECIPE STEP UPDATES:
+- Update any steps that mention the original ingredient to use the new ingredient
+- Adjust preparation instructions appropriately:
+  - Fresh herbs "torn" or "chopped" → Dried herbs "crumbled" or just added directly
+  - Fresh garlic "minced" → Garlic powder just "added" or "sprinkled"
+  - If a step says "garnish with fresh basil", change to appropriate dried herb instruction
+- Keep step structure (title and substeps) the same, just update the text
+- Return ALL steps, even unchanged ones
+
 Return JSON (you MUST convert quantities for herb substitutions):
 {
   "updatedRecipeName": "recipe name (same if ingredient not in name)",
@@ -1601,6 +1619,9 @@ Return JSON (you MUST convert quantities for herb substitutions):
     "quantity": 1.0,
     "unit": "tbsp"
   },
+  "updatedSteps": [
+    {"title": "Step title", "substeps": ["substep 1", "substep 2"]}
+  ],
   "notes": "cooking tips for this substitution, or null"
 }`;
 
@@ -1611,29 +1632,29 @@ Return JSON (you MUST convert quantities for herb substitutions):
       config: {
         responseMimeType: 'application/json',
         temperature: 0.2,
-        maxOutputTokens: 1000,
+        maxOutputTokens: 4000,  // Increased for full recipe steps
         thinkingConfig: {
-          thinkingLevel: ThinkingLevel.LOW,  // Simple task, don't need much thinking
+          thinkingLevel: ThinkingLevel.LOW,
         },
       }
     });
 
     const text = response.text?.trim() || '{}';
-    console.log(`[Substitution] Got response: ${text.slice(0, 200)}`);
+    console.log(`[Substitution] Got response: ${text.slice(0, 300)}`);
 
     const result = JSON.parse(text) as SubstitutionResponse;
 
     // Validate the response
-    if (!result.updatedRecipeName || !result.updatedIngredient) {
+    if (!result.updatedRecipeName || !result.updatedIngredient || !result.updatedSteps) {
       throw new Error('Invalid response structure');
     }
 
-    console.log(`[Substitution] Result: "${result.updatedRecipeName}", ${result.updatedIngredient.quantity} ${result.updatedIngredient.unit} ${result.updatedIngredient.name}`);
+    console.log(`[Substitution] Result: "${result.updatedRecipeName}", ${result.updatedIngredient.quantity} ${result.updatedIngredient.unit} ${result.updatedIngredient.name}, ${result.updatedSteps.length} steps`);
 
     return result;
   } catch (error) {
     console.error('[Substitution] Error:', error);
-    // Fallback: return original values unchanged
+    // Fallback: return original values with steps unchanged
     return {
       updatedRecipeName: request.recipeName,
       updatedIngredient: {
@@ -1641,6 +1662,7 @@ Return JSON (you MUST convert quantities for herb substitutions):
         quantity: request.originalIngredient.quantity,
         unit: request.originalIngredient.unit,
       },
+      updatedSteps: request.steps,  // Return original steps unchanged
       notes: null,
     };
   }

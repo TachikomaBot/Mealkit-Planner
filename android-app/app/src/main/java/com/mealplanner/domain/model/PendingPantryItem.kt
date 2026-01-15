@@ -28,5 +28,14 @@ data class IngredientSource(
     val recipeName: String,
     val ingredientIndex: Int,
     val originalQuantity: Double = 0.0,
-    val originalUnit: String = ""
+    val originalUnit: String = "",
+    val recipeSteps: List<RecipeStepSource> = emptyList()
+)
+
+/**
+ * Recipe step for substitution updates.
+ */
+data class RecipeStepSource(
+    val title: String,
+    val substeps: List<String>
 )

@@ -212,6 +212,12 @@ export interface SubstitutionRequest {
     unit: string;
   };
   newIngredientName: string;
+  steps: RecipeStep[];  // Recipe steps to potentially update
+}
+
+export interface RecipeStep {
+  title: string;
+  substeps: string[];
 }
 
 export interface SubstitutionResponse {
@@ -221,6 +227,7 @@ export interface SubstitutionResponse {
     quantity: number;
     unit: string;
   };
+  updatedSteps: RecipeStep[];  // Updated recipe steps
   notes: string | null;  // e.g., "Dried herbs are more concentrated than fresh"
 }
 

@@ -195,7 +195,8 @@ data class PantryCategorizeProgressDto(
 data class SubstitutionRequest(
     val recipeName: String,
     val originalIngredient: OriginalIngredientDto,
-    val newIngredientName: String
+    val newIngredientName: String,
+    val steps: List<RecipeStepDto>
 )
 
 @Serializable
@@ -206,9 +207,16 @@ data class OriginalIngredientDto(
 )
 
 @Serializable
+data class RecipeStepDto(
+    val title: String,
+    val substeps: List<String>
+)
+
+@Serializable
 data class SubstitutionResponse(
     val updatedRecipeName: String,
     val updatedIngredient: UpdatedIngredientDto,
+    val updatedSteps: List<RecipeStepDto>,
     val notes: String? = null
 )
 

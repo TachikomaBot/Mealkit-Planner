@@ -15,6 +15,7 @@ import com.mealplanner.data.remote.dto.ShoppingItemForPantryDto
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import com.mealplanner.domain.model.IngredientSource
+import com.mealplanner.domain.model.RecipeStepSource
 import com.mealplanner.domain.model.PantryItem
 import com.mealplanner.domain.model.ShoppingCategories
 import com.mealplanner.domain.model.ShoppingItem
@@ -377,7 +378,8 @@ class ShoppingRepositoryImpl @Inject constructor(
     // JSON structures matching what's stored in the database by MealPlanRepositoryImpl
     @Serializable
     private data class StoredRecipeJson(
-        val ingredients: List<StoredIngredientJson> = emptyList()
+        val ingredients: List<StoredIngredientJson> = emptyList(),
+        val steps: List<StoredStepJson> = emptyList()
     )
 
     @Serializable
@@ -385,6 +387,12 @@ class ShoppingRepositoryImpl @Inject constructor(
         val name: String,
         val quantity: Double = 1.0,
         val unit: String = ""
+    )
+
+    @Serializable
+    private data class StoredStepJson(
+        val title: String,
+        val substeps: List<String> = emptyList()
     )
 
     // JSON parser configured to ignore unknown keys
@@ -600,18 +608,34 @@ class ShoppingRepositoryImpl @Inject constructor(
             sources.groupBy { it.shoppingItemId }
                 .mapValues { (_, sourceEntities) ->
                     sourceEntities.map { entity ->
-                        // Get recipe name from the planned recipe
+                        // Get recipe from the planned recipe
                         val recipe = mealPlanDao.getPlannedRecipeById(entity.plannedRecipeId)
+                        // Parse steps from recipe JSON
+                        val steps = recipe?.recipeJson?.let { parseStepsFromRecipeJson(it) } ?: emptyList()
                         IngredientSource(
                             plannedRecipeId = entity.plannedRecipeId,
                             recipeName = recipe?.recipeName ?: "Unknown Recipe",
                             ingredientIndex = entity.ingredientIndex,
                             originalQuantity = entity.originalQuantity,
-                            originalUnit = entity.originalUnit
+                            originalUnit = entity.originalUnit,
+                            recipeSteps = steps
                         )
                     }
                 }
         }
+
+    // Parse steps from recipe JSON
+    private fun parseStepsFromRecipeJson(recipeJson: String): List<RecipeStepSource> {
+        return try {
+            val recipe = json.decodeFromString<StoredRecipeJson>(recipeJson)
+            recipe.steps.map { step ->
+                RecipeStepSource(title = step.title, substeps = step.substeps)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ShoppingRepo", "Failed to parse recipe steps: ${e.message}")
+            emptyList()
+        }
+    }
 
     override suspend fun updateItem(itemId: Long, name: String, displayQuantity: String): Unit =
         withContext(Dispatchers.IO) {

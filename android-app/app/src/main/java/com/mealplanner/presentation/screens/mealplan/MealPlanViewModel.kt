@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mealplanner.data.remote.api.MealPlanApi
 import com.mealplanner.data.remote.dto.OriginalIngredientDto
+import com.mealplanner.data.remote.dto.RecipeStepDto
 import com.mealplanner.data.remote.dto.SubstitutionRequest
 import com.mealplanner.domain.model.GeneratedMealPlan
 import com.mealplanner.domain.model.GenerationProgress
@@ -465,6 +466,11 @@ class MealPlanViewModel @Inject constructor(
 
                         for (source in item.sources) {
                             try {
+                                // Convert recipe steps to DTO format
+                                val stepsDto = source.recipeSteps.map { step ->
+                                    RecipeStepDto(title = step.title, substeps = step.substeps)
+                                }
+
                                 // Call AI to intelligently process the substitution
                                 val substitutionRequest = SubstitutionRequest(
                                     recipeName = source.recipeName,
@@ -473,24 +479,32 @@ class MealPlanViewModel @Inject constructor(
                                         quantity = source.originalQuantity,
                                         unit = source.originalUnit
                                     ),
-                                    newIngredientName = item.name
+                                    newIngredientName = item.name,
+                                    steps = stepsDto
                                 )
 
                                 val aiResponse = mealPlanApi.processSubstitution(substitutionRequest)
                                 android.util.Log.d("MealPlanVM",
                                     "AI substitution result: recipe='${aiResponse.updatedRecipeName}', " +
-                                    "ingredient=${aiResponse.updatedIngredient.quantity} ${aiResponse.updatedIngredient.unit} ${aiResponse.updatedIngredient.name}" +
+                                    "ingredient=${aiResponse.updatedIngredient.quantity} ${aiResponse.updatedIngredient.unit} ${aiResponse.updatedIngredient.name}, " +
+                                    "${aiResponse.updatedSteps.size} steps" +
                                     (aiResponse.notes?.let { ", notes=$it" } ?: "")
                                 )
 
-                                // Apply the AI-determined updates
+                                // Convert updated steps back to domain format
+                                val updatedSteps = aiResponse.updatedSteps.map { step ->
+                                    com.mealplanner.domain.model.CookingStep(title = step.title, substeps = step.substeps)
+                                }
+
+                                // Apply the AI-determined updates including steps
                                 mealPlanRepository.updateRecipeWithSubstitution(
                                     plannedRecipeId = source.plannedRecipeId,
                                     ingredientIndex = source.ingredientIndex,
                                     newRecipeName = aiResponse.updatedRecipeName,
                                     newIngredientName = aiResponse.updatedIngredient.name,
                                     newQuantity = aiResponse.updatedIngredient.quantity,
-                                    newUnit = aiResponse.updatedIngredient.unit
+                                    newUnit = aiResponse.updatedIngredient.unit,
+                                    newSteps = updatedSteps
                                 )
                             } catch (e: Exception) {
                                 // If AI call fails, fall back to simple name update

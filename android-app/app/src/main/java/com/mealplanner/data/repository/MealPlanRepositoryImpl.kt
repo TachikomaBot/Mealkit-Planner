@@ -307,7 +307,8 @@ class MealPlanRepositoryImpl @Inject constructor(
         newRecipeName: String,
         newIngredientName: String,
         newQuantity: Double,
-        newUnit: String
+        newUnit: String,
+        newSteps: List<CookingStep>
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val entity = mealPlanDao.getPlannedRecipeById(plannedRecipeId)
@@ -332,10 +333,16 @@ class MealPlanRepositoryImpl @Inject constructor(
                 preparation = recipeData.ingredients[ingredientIndex].preparation
             )
 
-            // Create updated recipe with AI-determined name
+            // Convert AI-updated steps to JSON format
+            val updatedStepsJson = newSteps.map { step ->
+                StepJson(title = step.title, substeps = step.substeps)
+            }
+
+            // Create updated recipe with AI-determined name, ingredients, and steps
             val updatedRecipe = recipeData.copy(
                 name = newRecipeName,
-                ingredients = updatedIngredients
+                ingredients = updatedIngredients,
+                steps = updatedStepsJson
             )
 
             // Serialize and save
@@ -344,7 +351,7 @@ class MealPlanRepositoryImpl @Inject constructor(
             // Update both recipe name and JSON
             mealPlanDao.updatePlannedRecipe(plannedRecipeId, newRecipeName, updatedJson)
             android.util.Log.d("MealPlanRepo",
-                "AI substitution applied: recipe='$newRecipeName', ingredient='$newIngredientName', qty=$newQuantity $newUnit"
+                "AI substitution applied: recipe='$newRecipeName', ingredient='$newIngredientName', qty=$newQuantity $newUnit, ${newSteps.size} steps"
             )
 
             Result.success(Unit)

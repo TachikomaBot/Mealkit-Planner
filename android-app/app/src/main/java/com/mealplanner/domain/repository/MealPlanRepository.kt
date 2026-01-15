@@ -1,5 +1,6 @@
 package com.mealplanner.domain.repository
 
+import com.mealplanner.domain.model.CookingStep
 import com.mealplanner.domain.model.MealPlan
 import com.mealplanner.domain.model.PlannedRecipe
 import com.mealplanner.domain.model.Recipe
@@ -122,7 +123,7 @@ interface MealPlanRepository {
     /**
      * Update a recipe with AI-determined substitution values.
      * Used when the AI has processed a substitution and returned updated recipe name,
-     * ingredient name, quantity, and unit.
+     * ingredient name, quantity, unit, and updated cooking steps.
      *
      * @param plannedRecipeId The ID of the planned recipe to update
      * @param ingredientIndex The index of the ingredient in the recipe's ingredients list
@@ -130,6 +131,7 @@ interface MealPlanRepository {
      * @param newIngredientName The new ingredient name
      * @param newQuantity The AI-adjusted ingredient quantity
      * @param newUnit The AI-adjusted ingredient unit
+     * @param newSteps The AI-updated cooking steps (may have instruction changes)
      */
     suspend fun updateRecipeWithSubstitution(
         plannedRecipeId: Long,
@@ -137,6 +139,7 @@ interface MealPlanRepository {
         newRecipeName: String,
         newIngredientName: String,
         newQuantity: Double,
-        newUnit: String
+        newUnit: String,
+        newSteps: List<CookingStep>
     ): Result<Unit>
 }
