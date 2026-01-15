@@ -1309,7 +1309,7 @@ Respond with JSON:
 
 /**
  * Categorize shopping items for pantry using Gemini AI.
- * Uses function calling to have Gemini invoke add_pantry_item for each item.
+ * Uses JSON response mode for fast single-call categorization.
  */
 export async function categorizePantryItems(
   apiKey: string,
@@ -1318,7 +1318,6 @@ export async function categorizePantryItems(
 ): Promise<PantryCategorizeResponse> {
   const startTime = Date.now();
   console.log(`[PantryCategorize] Starting categorization for ${items.length} items`);
-  console.log(`[PantryCategorize] Items: ${JSON.stringify(items.map(i => ({ id: i.id, name: i.name })))}`);
 
   onProgress?.({
     phase: 'categorizing',
@@ -1334,218 +1333,112 @@ export async function categorizePantryItems(
 
   const ai = new GoogleGenAI({ apiKey });
 
-  const systemPrompt = `You are a pantry organization assistant. Your job is to categorize shopping items for storage in a home pantry.
-
-For each item provided, analyze it and call the add_pantry_item function with the appropriate categorization.
-
-CATEGORY MAPPING (choose the most appropriate):
-- PRODUCE: Fresh fruits, vegetables, leafy greens, fresh herbs
-- PROTEIN: Meat, poultry, fish, seafood, tofu, tempeh, eggs
-- DAIRY: Milk, cheese, yogurt, butter, cream
-- DRY_GOODS: Pasta, rice, flour, dried beans, canned goods, cereals, bread
-- SPICE: Dried herbs, spices, seasonings, spice blends
-- OILS: Cooking oils, olive oil, vegetable oil, sesame oil, vinegar
-- CONDIMENT: Sauces, ketchup, mustard, soy sauce, hot sauce, salad dressings
-- FROZEN: Frozen vegetables, frozen meals, ice cream
-- OTHER: Items that don't fit other categories
-
-TRACKING STYLE (determines how quantity is tracked):
-- STOCK_LEVEL: For items where precise quantity doesn't matter - spices, oils, condiments, flour, sugar, rice
-  stockLevel should be: "FULL" for new purchases
-- COUNT: For countable items - cans, jars, bottles, boxes, packages
-- PRECISE: For items where exact quantity matters - fresh produce, proteins, dairy
-  stockLevel should be null for COUNT and PRECISE
-
-UNIT MAPPING:
-- GRAMS: For items measured by weight (produce, proteins, cheese)
-- MILLILITERS: For liquids (milk, oil, sauces)
-- UNITS: For whole items (eggs, apples, onions)
-- PIECES: For protein portions (chicken breasts, salmon fillets)
-- BUNCH: For bundled produce (cilantro, parsley, green onions)
-
-EXPIRY DAYS (from purchase date, null if shelf-stable):
-- Leafy greens, fresh herbs: 3-5 days
-- Fresh berries: 3-5 days
-- Other fresh produce: 7-10 days
-- Fresh fish/seafood: 2-3 days
-- Fresh poultry: 3-4 days
-- Fresh red meat: 4-5 days
-- Fresh dairy (milk, yogurt): 7-10 days
-- Hard cheese: 21-30 days
-- Eggs: 21-28 days
-- Bread: 5-7 days
-- Dry goods, canned, spices, oils, condiments: null (shelf-stable)
-
-QUANTITY PARSING:
-Parse the displayQuantity string to extract numeric quantity:
-- "500g" → quantity: 500, unit: GRAMS
-- "2 pieces" → quantity: 2, unit: PIECES
-- "1 bunch" → quantity: 1, unit: BUNCH
-- "450g (2 fillets)" → quantity: 450, unit: GRAMS
-- "1L" or "1000ml" → quantity: 1000, unit: MILLILITERS
-
-Call add_pantry_item for EACH item in the list. Do not skip any items.`;
-
-  const toolDeclaration: FunctionDeclaration = {
-    name: 'add_pantry_item',
-    description: 'Add a categorized item to the pantry. Call once for each shopping item.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        id: { type: Type.NUMBER, description: 'Original shopping item ID (from input)' },
-        name: { type: Type.STRING, description: 'Clean item name for pantry display' },
-        quantity: { type: Type.NUMBER, description: 'Parsed numeric quantity' },
-        unit: {
-          type: Type.STRING,
-          description: 'Unit of measurement',
-          enum: ['GRAMS', 'MILLILITERS', 'UNITS', 'PIECES', 'BUNCH']
-        },
-        category: {
-          type: Type.STRING,
-          description: 'Pantry category',
-          enum: ['PRODUCE', 'PROTEIN', 'DAIRY', 'DRY_GOODS', 'SPICE', 'OILS', 'CONDIMENT', 'FROZEN', 'OTHER']
-        },
-        trackingStyle: {
-          type: Type.STRING,
-          description: 'How to track quantity',
-          enum: ['STOCK_LEVEL', 'COUNT', 'PRECISE']
-        },
-        stockLevel: {
-          type: Type.STRING,
-          description: 'Stock level (only for STOCK_LEVEL tracking style)',
-          nullable: true,
-          enum: ['FULL', 'HIGH', 'MEDIUM', 'LOW']
-        },
-        expiryDays: {
-          type: Type.NUMBER,
-          description: 'Days until expiry from purchase (null for shelf-stable)',
-          nullable: true
-        },
-        perishable: { type: Type.BOOLEAN, description: 'Whether item is perishable' }
-      },
-      required: ['id', 'name', 'quantity', 'unit', 'category', 'trackingStyle', 'perishable']
-    }
-  };
-
-  const userPrompt = `Categorize these ${items.length} shopping items for pantry storage.
+  const prompt = `You are a pantry organization assistant. Categorize these shopping items for pantry storage.
 
 ITEMS TO CATEGORIZE:
-${items.map(item => `- ID: ${item.id}, Name: "${item.name}", Quantity: "${item.polishedDisplayQuantity}", Shopping Category: "${item.shoppingCategory}"`).join('\n')}
+${items.map(item => `- ID: ${item.id}, Name: "${item.name}", Quantity: "${item.polishedDisplayQuantity}"`).join('\n')}
 
-Call add_pantry_item for EACH item above. Do not skip any items.`;
+For each item, determine:
+
+1. CATEGORY (choose one):
+   - PRODUCE: Fresh fruits, vegetables, leafy greens, fresh herbs
+   - PROTEIN: Meat, poultry, fish, seafood, tofu, eggs
+   - DAIRY: Milk, cheese, yogurt, butter, cream
+   - DRY_GOODS: Pasta, rice, flour, canned goods, cereals, bread
+   - SPICE: Dried herbs, spices, seasonings
+   - OILS: Cooking oils, olive oil, vinegar
+   - CONDIMENT: Sauces, ketchup, mustard, soy sauce
+   - FROZEN: Frozen items
+   - OTHER: Doesn't fit above
+
+2. TRACKING STYLE:
+   - STOCK_LEVEL: Spices, oils, condiments, flour, sugar, rice (set stockLevel to "FULL")
+   - COUNT: Cans, jars, bottles, boxes
+   - PRECISE: Fresh produce, proteins, dairy
+
+3. QUANTITY & UNIT: Parse from the quantity string
+   - "500g" → quantity: 500, unit: "GRAMS"
+   - "2 pieces" → quantity: 2, unit: "PIECES"
+   - "1 bunch" → quantity: 1, unit: "BUNCH"
+   - "1L" → quantity: 1000, unit: "MILLILITERS"
+   - Units: GRAMS, MILLILITERS, UNITS, PIECES, BUNCH
+
+4. EXPIRY DAYS (null if shelf-stable):
+   - Leafy greens/herbs: 4
+   - Fresh produce: 7
+   - Fresh fish/seafood: 3
+   - Fresh poultry: 4
+   - Fresh red meat: 5
+   - Dairy: 10
+   - Eggs: 21
+   - Bread: 5
+   - Dry goods/canned/spices/oils: null
+
+5. PERISHABLE: true for produce, protein, dairy; false otherwise
+
+Return JSON:
+{
+  "items": [
+    {
+      "id": 1,
+      "name": "Salmon Fillets",
+      "quantity": 450,
+      "unit": "GRAMS",
+      "category": "PROTEIN",
+      "trackingStyle": "PRECISE",
+      "stockLevel": null,
+      "expiryDays": 3,
+      "perishable": true
+    }
+  ]
+}`;
 
   try {
-    const categorizedItems: CategorizedPantryItem[] = [];
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const contents: any[] = [
-      { role: 'user', parts: [{ text: userPrompt }] }
-    ];
-
-    const maxIterations = Math.max(5, Math.ceil(items.length / 3) + 2);
-
-    for (let iteration = 0; iteration < maxIterations; iteration++) {
-      let response;
-      try {
-        console.log(`[PantryCategorize] Making Gemini API call, iteration ${iteration + 1}...`);
-        response = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          config: {
-            systemInstruction: systemPrompt,
-            tools: [{ functionDeclarations: [toolDeclaration] }],
-            temperature: 0.1,
-          },
-          contents
-        });
-        console.log(`[PantryCategorize] Gemini API call succeeded`);
-      } catch (apiError) {
-        console.error(`[PantryCategorize] Gemini API error on iteration ${iteration + 1}:`, apiError);
-        // If we have some items already, return them; otherwise throw
-        if (categorizedItems.length > 0) {
-          console.log(`[PantryCategorize] Returning ${categorizedItems.length} items collected before error`);
-          break;
-        }
-        throw apiError;
+    console.log(`[PantryCategorize] Making Gemini API call...`);
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        temperature: 0.1,
+        maxOutputTokens: 8000,
       }
+    });
 
-      const candidate = response.candidates?.[0];
-      if (!candidate?.content?.parts) {
-        console.error('[PantryCategorize] No candidate content in response');
-        throw new Error('No response from Gemini');
-      }
+    const text = response.text?.trim() || '{}';
+    console.log(`[PantryCategorize] Got response (${text.length} chars)`);
 
-      const parts = candidate.content.parts;
-      const functionCalls = parts.filter(p => p.functionCall);
+    const result = extractAndParseJSON(text, 'items') as unknown as PantryCategorizeResponse;
 
-      console.log(`[PantryCategorize] Iteration ${iteration + 1}: ${functionCalls.length} function calls`);
-
-      if (functionCalls.length === 0) {
-        // No more function calls - model is done
-        break;
-      }
-
-      // Process function calls
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const functionResponses: any[] = [];
-
-      for (const part of functionCalls) {
-        if (part.functionCall?.name === 'add_pantry_item') {
-          const args = part.functionCall.args as unknown as CategorizedPantryItem;
-
-          // Validate and add to results
-          const categorizedItem: CategorizedPantryItem = {
-            id: Number(args.id),
-            name: String(args.name || ''),
-            quantity: Number(args.quantity) || 1,
-            unit: String(args.unit || 'UNITS'),
-            category: String(args.category || 'OTHER'),
-            trackingStyle: String(args.trackingStyle || 'PRECISE'),
-            stockLevel: args.trackingStyle === 'STOCK_LEVEL' ? (args.stockLevel || 'FULL') : null,
-            expiryDays: args.expiryDays != null ? Number(args.expiryDays) : null,
-            perishable: Boolean(args.perishable)
-          };
-
-          categorizedItems.push(categorizedItem);
-          console.log(`[PantryCategorize] Added: ${categorizedItem.name} → ${categorizedItem.category} (${categorizedItem.trackingStyle})`);
-
-          functionResponses.push({
-            functionResponse: {
-              name: 'add_pantry_item',
-              response: { success: true, id: categorizedItem.id }
-            }
-          });
-        }
-      }
-
-      // Update progress
-      onProgress?.({
-        phase: 'categorizing',
-        current: categorizedItems.length,
-        total: items.length,
-        message: `Categorized ${categorizedItems.length}/${items.length} items`
-      });
-
-      // Add responses to conversation for next iteration
-      contents.push({ role: 'model', parts });
-      contents.push({ role: 'user', parts: functionResponses });
-
-      // Check if we've processed all items
-      if (categorizedItems.length >= items.length) {
-        break;
-      }
+    if (!result.items || result.items.length === 0) {
+      console.warn('[PantryCategorize] No items in response, using fallback');
+      return { items: items.map(createFallbackItem) };
     }
 
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`[PantryCategorize] Completed: ${categorizedItems.length}/${items.length} items in ${elapsed}s`);
+    // Validate and clean up results
+    const categorizedItems: CategorizedPantryItem[] = result.items.map(item => ({
+      id: Number(item.id),
+      name: String(item.name || ''),
+      quantity: Number(item.quantity) || 1,
+      unit: String(item.unit || 'UNITS'),
+      category: String(item.category || 'OTHER'),
+      trackingStyle: String(item.trackingStyle || 'PRECISE'),
+      stockLevel: item.trackingStyle === 'STOCK_LEVEL' ? (item.stockLevel || 'FULL') : null,
+      expiryDays: item.expiryDays != null ? Number(item.expiryDays) : null,
+      perishable: Boolean(item.perishable)
+    }));
 
     // Check for missing items and add fallbacks
     const processedIds = new Set(categorizedItems.map(i => i.id));
     for (const item of items) {
       if (!processedIds.has(item.id)) {
-        console.warn(`[PantryCategorize] Item ${item.id} (${item.name}) not processed, adding fallback`);
+        console.warn(`[PantryCategorize] Item ${item.id} (${item.name}) not in response, adding fallback`);
         categorizedItems.push(createFallbackItem(item));
       }
     }
+
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[PantryCategorize] Completed: ${categorizedItems.length} items in ${elapsed}s`);
 
     onProgress?.({
       phase: 'complete',
@@ -1557,10 +1450,8 @@ Call add_pantry_item for EACH item above. Do not skip any items.`;
     return { items: categorizedItems };
   } catch (error) {
     console.error('[PantryCategorize] Error:', error);
-
     // Return fallback categorization for all items
-    const fallbackItems = items.map(createFallbackItem);
-    return { items: fallbackItems };
+    return { items: items.map(createFallbackItem) };
   }
 }
 
