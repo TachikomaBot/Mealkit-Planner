@@ -531,9 +531,10 @@ class ShoppingRepositoryImpl @Inject constructor(
                 }
         }
 
-    override suspend fun updateItem(itemId: Long, name: String, displayQuantity: String) =
+    override suspend fun updateItem(itemId: Long, name: String, displayQuantity: String): Unit =
         withContext(Dispatchers.IO) {
             shoppingDao.updateItemNameAndQuantity(itemId, name, displayQuantity)
             android.util.Log.d("ShoppingRepo", "Updated item $itemId: name='$name', qty='$displayQuantity'")
+            Unit
         }
 }
