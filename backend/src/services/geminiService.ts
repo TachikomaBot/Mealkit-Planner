@@ -1388,8 +1388,11 @@ Now categorize ALL ${items.length} input items. Use the EXACT id values from the
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
-        temperature: 0.1,
-        maxOutputTokens: 8000,
+        temperature: 0.2,
+        maxOutputTokens: 16000,
+        thinkingConfig: {
+          thinkingLevel: ThinkingLevel.MEDIUM,
+        },
       }
     });
 
