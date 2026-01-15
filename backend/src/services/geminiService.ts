@@ -1333,65 +1333,53 @@ export async function categorizePantryItems(
 
   const ai = new GoogleGenAI({ apiKey });
 
-  const prompt = `You are a pantry organization assistant. Categorize these shopping items for pantry storage.
+  const prompt = `Categorize these shopping items for a home pantry. Return a JSON object with an "items" array.
 
-ITEMS TO CATEGORIZE:
+INPUT ITEMS:
 ${items.map(item => `- ID: ${item.id}, Name: "${item.name}", Quantity: "${item.polishedDisplayQuantity}"`).join('\n')}
 
-For each item, determine:
+RULES - You MUST follow these exactly:
 
-1. CATEGORY (choose one):
-   - PRODUCE: Fresh fruits, vegetables, leafy greens, fresh herbs
-   - PROTEIN: Meat, poultry, fish, seafood, tofu, eggs
-   - DAIRY: Milk, cheese, yogurt, butter, cream
-   - DRY_GOODS: Pasta, rice, flour, canned goods, cereals, bread
-   - SPICE: Dried herbs, spices, seasonings
-   - OILS: Cooking oils, olive oil, vinegar
-   - CONDIMENT: Sauces, ketchup, mustard, soy sauce
-   - FROZEN: Frozen items
-   - OTHER: Doesn't fit above
+CATEGORY - Assign based on what the item IS:
+- "PRODUCE" = Fresh vegetables, fruits, herbs (basil, parsley, chives, green onions, lettuce, tomatoes, carrots)
+- "PROTEIN" = Fish, meat, poultry, seafood, tofu (salmon, chicken, beef, shrimp)
+- "DAIRY" = Cheese, milk, yogurt, butter, cream (mozzarella, parmesan, cheddar)
+- "DRY_GOODS" = Bread, pasta, rice, flour, canned goods, cereals
+- "SPICE" = Dried spices and seasonings (paprika, cumin, oregano)
+- "OILS" = Cooking oils and vinegars (olive oil, vegetable oil, sesame oil, balsamic vinegar)
+- "CONDIMENT" = Sauces, honey, mustard, soy sauce, ketchup
+- "FROZEN" = Anything frozen (frozen peas, frozen berries)
+- "OTHER" = Only if nothing else fits
 
-2. TRACKING STYLE:
-   - STOCK_LEVEL: Spices, oils, condiments, flour, sugar, rice (set stockLevel to "FULL")
-   - COUNT: Cans, jars, bottles, boxes
-   - PRECISE: Fresh produce, proteins, dairy
+TRACKING STYLE:
+- "STOCK_LEVEL" with stockLevel="FULL" for: oils, spices, condiments, flour, sugar, rice
+- "PRECISE" with stockLevel=null for: produce, proteins, dairy, frozen
 
-3. QUANTITY & UNIT: Parse from the quantity string
-   - "500g" → quantity: 500, unit: "GRAMS"
-   - "2 pieces" → quantity: 2, unit: "PIECES"
-   - "1 bunch" → quantity: 1, unit: "BUNCH"
-   - "1L" → quantity: 1000, unit: "MILLILITERS"
-   - Units: GRAMS, MILLILITERS, UNITS, PIECES, BUNCH
+EXPIRY DAYS - Set based on category:
+- Fresh herbs (basil, parsley, chives, cilantro): 4
+- Other produce: 7
+- Fish/seafood: 3
+- Poultry: 4
+- Red meat: 5
+- Dairy/cheese: 10
+- Bread: 5
+- Oils, spices, condiments, dry goods: null (shelf stable)
+- Frozen: null
 
-4. EXPIRY DAYS (null if shelf-stable):
-   - Leafy greens/herbs: 4
-   - Fresh produce: 7
-   - Fresh fish/seafood: 3
-   - Fresh poultry: 4
-   - Fresh red meat: 5
-   - Dairy: 10
-   - Eggs: 21
-   - Bread: 5
-   - Dry goods/canned/spices/oils: null
+PERISHABLE: true for PRODUCE, PROTEIN, DAIRY, FROZEN. false otherwise.
 
-5. PERISHABLE: true for produce, protein, dairy; false otherwise
-
-Return JSON:
+EXAMPLE OUTPUT:
 {
   "items": [
-    {
-      "id": 1,
-      "name": "Salmon Fillets",
-      "quantity": 450,
-      "unit": "GRAMS",
-      "category": "PROTEIN",
-      "trackingStyle": "PRECISE",
-      "stockLevel": null,
-      "expiryDays": 3,
-      "perishable": true
-    }
+    {"id": 1, "name": "Salmon Fillets", "quantity": 450, "unit": "GRAMS", "category": "PROTEIN", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": 3, "perishable": true},
+    {"id": 2, "name": "Fresh Basil", "quantity": 1, "unit": "BUNCH", "category": "PRODUCE", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": 4, "perishable": true},
+    {"id": 3, "name": "Olive Oil", "quantity": 500, "unit": "MILLILITERS", "category": "OILS", "trackingStyle": "STOCK_LEVEL", "stockLevel": "FULL", "expiryDays": null, "perishable": false},
+    {"id": 4, "name": "Frozen Peas", "quantity": 500, "unit": "GRAMS", "category": "FROZEN", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": null, "perishable": true},
+    {"id": 5, "name": "Fresh Mozzarella", "quantity": 250, "unit": "GRAMS", "category": "DAIRY", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": 10, "perishable": true}
   ]
-}`;
+}
+
+Now categorize ALL ${items.length} input items. Use the EXACT id values from the input.`;
 
   try {
     console.log(`[PantryCategorize] Making Gemini API call...`);
