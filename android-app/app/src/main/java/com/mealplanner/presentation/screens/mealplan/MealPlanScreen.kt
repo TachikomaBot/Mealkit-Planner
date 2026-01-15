@@ -206,6 +206,10 @@ fun MealPlanScreen(
                     GroceryListLoadingScreen()
                 }
 
+                is MealPlanUiState.StockingPantry -> {
+                    StockingPantryLoadingScreen()
+                }
+
                 is MealPlanUiState.ActivePlan -> {
                     // Handled above
                 }
@@ -1442,6 +1446,90 @@ private fun GroceryListLoadingScreen() {
                 modifier = Modifier.size(32.dp),
                 color = PacificBlue,
                 strokeWidth = 3.dp
+            )
+        }
+    }
+}
+
+@Composable
+private fun StockingPantryLoadingScreen() {
+    // Pulsing animation for the icon
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val scale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = androidx.compose.animation.core.EaseInOutSine),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "scale"
+    )
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.6f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = androidx.compose.animation.core.EaseInOutSine),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "alpha"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            // Pantry icon (using Kitchen/Inventory icon)
+            Box(
+                modifier = Modifier
+                    .size(120.dp)
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Inventory2,
+                    contentDescription = null,
+                    modifier = Modifier.size(80.dp),
+                    tint = PacificBlue.copy(alpha = alpha)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // Loading text
+            Text(
+                text = "Stocking your pantry...",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Categorizing items with AI",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Progress indicator
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .width(200.dp)
+                    .height(6.dp),
+                color = PacificBlue,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
         }
     }

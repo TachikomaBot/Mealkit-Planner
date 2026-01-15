@@ -371,17 +371,38 @@ class MealPlanViewModel @Inject constructor(
         viewModelScope.launch {
             val current = _uiState.value
             if (current is MealPlanUiState.ActivePlan) {
-                // Move checked items to pantry
-                val itemsAdded = manageShoppingListUseCase.completeShoppingTrip(current.mealPlan.id)
+                val mealPlanId = current.mealPlan.id
 
-                // Mark shopping as complete in the meal plan
-                mealPlanRepository.markShoppingComplete(current.mealPlan.id)
+                // Show stocking progress UI
+                _uiState.value = MealPlanUiState.StockingPantry
 
-                // Show completion dialog
-                _shoppingCompletionState.value = ShoppingCompletionState(itemsAddedToPantry = itemsAdded)
+                try {
+                    // Move checked items to pantry (this calls AI categorization)
+                    val itemsAdded = manageShoppingListUseCase.completeShoppingTrip(mealPlanId)
 
-                // Update view mode to show meals
-                _uiState.value = current.copy(viewMode = ViewMode.PRIMARY)
+                    // Mark shopping as complete in the meal plan
+                    mealPlanRepository.markShoppingComplete(mealPlanId)
+
+                    // Transition back to active plan
+                    val updatedPlan = mealPlanRepository.getCurrentMealPlan()
+                    if (updatedPlan != null) {
+                        _uiState.value = MealPlanUiState.ActivePlan(updatedPlan, ViewMode.PRIMARY)
+                    } else {
+                        setEmpty()
+                    }
+
+                    // Show completion dialog
+                    _shoppingCompletionState.value = ShoppingCompletionState(itemsAddedToPantry = itemsAdded)
+                } catch (e: Exception) {
+                    android.util.Log.e("MealPlanVM", "Failed to stock pantry: ${e.message}", e)
+                    // Return to active plan on error
+                    val plan = mealPlanRepository.getCurrentMealPlan()
+                    if (plan != null) {
+                        _uiState.value = MealPlanUiState.ActivePlan(plan, ViewMode.SECONDARY)
+                    } else {
+                        setEmpty()
+                    }
+                }
             }
         }
     }
@@ -408,6 +429,7 @@ sealed class MealPlanUiState {
     ) : MealPlanUiState()
     data object Saving : MealPlanUiState()
     data object PolishingGroceryList : MealPlanUiState()
+    data object StockingPantry : MealPlanUiState()
     data class ActivePlan(
         val mealPlan: MealPlan,
         val viewMode: ViewMode = ViewMode.PRIMARY
