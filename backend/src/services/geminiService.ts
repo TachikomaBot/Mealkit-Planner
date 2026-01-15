@@ -1555,45 +1555,53 @@ export async function processSubstitution(
 
   const prompt = `You are a culinary expert helping with ingredient substitutions in recipes.
 
-TASK: A cook is substituting an ingredient in a recipe. Determine:
-1. If the recipe NAME should be updated to reflect the substitution
-2. If the ingredient QUANTITY should be adjusted for the substitution
-3. Any notes the cook should know
+TASK: A cook is substituting an ingredient in a recipe. You must:
+1. Determine if the recipe NAME should be updated
+2. CONVERT the ingredient quantity appropriately for the substitution
+3. Provide any helpful cooking notes
 
 RECIPE: "${request.recipeName}"
 ORIGINAL INGREDIENT: ${request.originalIngredient.quantity} ${request.originalIngredient.unit} ${request.originalIngredient.name}
 NEW INGREDIENT: ${request.newIngredientName}
 
-RULES:
+CRITICAL - DETECT SUBSTITUTION TYPE FROM INGREDIENT NAMES:
+- Look at BOTH the original name ("${request.originalIngredient.name}") and new name ("${request.newIngredientName}")
+- "Fresh X" → "Dried X" = fresh-to-dried substitution (use 1/3 amount, change unit)
+- "Dried X" → "Fresh X" = dried-to-fresh substitution (use 3x amount)
+- Check for words like "fresh", "dried", "frozen", "canned", "ground", "powdered" in the names
+
+QUANTITY CONVERSION RULES:
+
+For FRESH HERBS → DRIED HERBS (e.g., "Fresh Basil" → "Dried Basil"):
+- Use 1/3 the amount
+- Convert imprecise units: 1 handful fresh ≈ 1 tbsp dried, 1 bunch fresh ≈ 2 tbsp dried
+- Change unit to tbsp or tsp (dried herbs are never measured in handfuls/bunches)
+
+For DRIED HERBS → FRESH HERBS:
+- Use 3x the amount
+- 1 tsp dried ≈ 1 tbsp fresh
+
+For FRESH GARLIC → GARLIC POWDER: 1 clove ≈ 1/4 tsp powder
+For FRESH GINGER → GROUND GINGER: 1 tbsp fresh ≈ 1/4 tsp ground
+For ONION → ONION POWDER: 1 medium onion ≈ 1 tbsp powder
+
+For PROTEIN SWAPS (salmon↔tilapia, chicken↔pork): Keep same weight
+For FRESH↔FROZEN vegetables: Same quantity
 
 RECIPE NAME UPDATES:
-- If the original ingredient is a KEY component that appears in the recipe name, update the name
-- Examples:
-  - "Honey Garlic Salmon" + (Salmon → Tilapia) = "Honey Garlic Tilapia"
-  - "Beef Tacos" + (Beef → Chicken) = "Chicken Tacos"
-  - "Lemon Herb Chicken" + (Lemon → Lime) = "Lime Herb Chicken"
-- If the ingredient is NOT in the recipe name, keep the name unchanged
-- Preserve the recipe name's style and structure
+- Update ONLY if the original ingredient appears in the recipe name
+- "Honey Garlic Salmon" + (Salmon → Tilapia) = "Honey Garlic Tilapia"
+- "Classic Tomato Pasta" + (Fresh Basil → Dried Basil) = "Classic Tomato Pasta" (unchanged - basil not in name)
 
-QUANTITY ADJUSTMENTS:
-- Fresh herbs → Dried herbs: Use 1/3 the amount (e.g., 3 tbsp fresh → 1 tbsp dried)
-- Dried herbs → Fresh herbs: Use 3x the amount
-- Fresh garlic → Garlic powder: 1 clove ≈ 1/4 tsp powder
-- Fresh ginger → Ground ginger: 1 tbsp fresh ≈ 1/4 tsp ground
-- Regular onion → Onion powder: 1 medium onion ≈ 1 tbsp powder
-- Different proteins (salmon → tilapia, chicken → pork): Keep same weight
-- Fresh vegetables → Frozen: Same quantity
-- Same category swaps (one fish for another, one cheese for another): Usually same quantity
-
-Return JSON:
+Return JSON (you MUST convert quantities for herb substitutions):
 {
-  "updatedRecipeName": "the new recipe name (or same if unchanged)",
+  "updatedRecipeName": "recipe name (same if ingredient not in name)",
   "updatedIngredient": {
-    "name": "the new ingredient name",
-    "quantity": 1.5,
+    "name": "the new ingredient name exactly as provided",
+    "quantity": 1.0,
     "unit": "tbsp"
   },
-  "notes": "Any helpful cooking notes, or null if none needed"
+  "notes": "cooking tips for this substitution, or null"
 }`;
 
   try {

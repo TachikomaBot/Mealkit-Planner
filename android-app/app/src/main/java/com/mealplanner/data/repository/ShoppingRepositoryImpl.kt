@@ -324,6 +324,10 @@ class ShoppingRepositoryImpl @Inject constructor(
             }
             shoppingDao.insertItems(newItems)
 
+            // Regenerate source records by matching polished item names to recipe ingredients
+            // This is necessary because the old sources were cascade-deleted with the old items
+            regenerateSourcesAfterPolish(mealPlanId)
+
             // Return updated shopping list
             val updatedItems = shoppingDao.getItemsForMealPlan(mealPlanId)
             android.util.Log.d("ShoppingRepo", "Polish saved: ${updatedItems.size} items in DB")
@@ -438,6 +442,82 @@ class ShoppingRepositoryImpl @Inject constructor(
             TrackingStyle.COUNT, TrackingStyle.PRECISE ->
                 pantryItem.quantityRemaining > 0 && !pantryItem.isLowStock
         }
+    }
+
+    /**
+     * Regenerate source records after polish by matching polished item names to recipe ingredients.
+     * This is necessary because polish deletes old items (cascade-deleting sources) and creates new ones.
+     */
+    private suspend fun regenerateSourcesAfterPolish(mealPlanId: Long) {
+        try {
+            val shoppingItems = shoppingDao.getItemsForMealPlan(mealPlanId)
+            val recipes = mealPlanDao.getPlannedRecipes(mealPlanId)
+
+            android.util.Log.d("ShoppingRepo", "Regenerating sources for ${shoppingItems.size} items across ${recipes.size} recipes")
+
+            val allSources = mutableListOf<ShoppingItemSourceEntity>()
+
+            for (item in shoppingItems) {
+                val itemNameNormalized = normalizeForSourceMatch(item.ingredientName)
+
+                for (recipe in recipes) {
+                    val ingredients = parseIngredientsFromRecipeJson(recipe.recipeJson)
+
+                    ingredients.forEachIndexed { index, ingredient ->
+                        val ingredientNameNormalized = normalizeForSourceMatch(ingredient.name)
+
+                        // Match if the normalized names are similar
+                        if (ingredientNameNormalized.contains(itemNameNormalized) ||
+                            itemNameNormalized.contains(ingredientNameNormalized)) {
+
+                            allSources.add(
+                                ShoppingItemSourceEntity(
+                                    shoppingItemId = item.id,
+                                    plannedRecipeId = recipe.id,
+                                    ingredientIndex = index,
+                                    originalName = ingredient.name,
+                                    originalQuantity = ingredient.quantity,
+                                    originalUnit = ingredient.unit
+                                )
+                            )
+                            android.util.Log.d("ShoppingRepo",
+                                "Linked '${item.ingredientName}' -> '${recipe.recipeName}' ingredient[$index]: ${ingredient.name}")
+                        }
+                    }
+                }
+            }
+
+            if (allSources.isNotEmpty()) {
+                shoppingDao.insertSources(allSources)
+                android.util.Log.d("ShoppingRepo", "Regenerated ${allSources.size} source records")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ShoppingRepo", "Failed to regenerate sources: ${e.message}", e)
+            // Non-fatal - substitution will fall back to name-only update
+        }
+    }
+
+    /**
+     * Normalize ingredient name for source matching.
+     * More aggressive than pantry matching - strips common prefixes/suffixes to match
+     * polished names (e.g., "Fresh Basil" polished to "Basil") back to recipe ingredients.
+     */
+    private fun normalizeForSourceMatch(name: String): String {
+        return name.lowercase()
+            .replace("fresh ", "")
+            .replace("dried ", "")
+            .replace("frozen ", "")
+            .replace("canned ", "")
+            .replace("chopped ", "")
+            .replace("minced ", "")
+            .replace("diced ", "")
+            .replace("sliced ", "")
+            .replace("whole ", "")
+            .replace("ground ", "")
+            .replace("crushed ", "")
+            .replace("leaves", "")
+            .replace("leaf", "")
+            .trim()
     }
 
     override suspend fun clearAll() = withContext(Dispatchers.IO) {
