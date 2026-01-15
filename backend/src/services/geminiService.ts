@@ -1318,6 +1318,7 @@ export async function categorizePantryItems(
 ): Promise<PantryCategorizeResponse> {
   const startTime = Date.now();
   console.log(`[PantryCategorize] Starting categorization for ${items.length} items`);
+  console.log(`[PantryCategorize] Items: ${JSON.stringify(items.map(i => ({ id: i.id, name: i.name })))}`);
 
   onProgress?.({
     phase: 'categorizing',
@@ -1325,6 +1326,11 @@ export async function categorizePantryItems(
     total: items.length,
     message: 'Analyzing items...'
   });
+
+  if (!apiKey) {
+    console.error('[PantryCategorize] No API key provided');
+    throw new Error('Gemini API key is required');
+  }
 
   const ai = new GoogleGenAI({ apiKey });
 
@@ -1439,18 +1445,32 @@ Call add_pantry_item for EACH item above. Do not skip any items.`;
     const maxIterations = Math.max(5, Math.ceil(items.length / 3) + 2);
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        config: {
-          systemInstruction: systemPrompt,
-          tools: [{ functionDeclarations: [toolDeclaration] }],
-          temperature: 0.1,
-        },
-        contents
-      });
+      let response;
+      try {
+        console.log(`[PantryCategorize] Making Gemini API call, iteration ${iteration + 1}...`);
+        response = await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          config: {
+            systemInstruction: systemPrompt,
+            tools: [{ functionDeclarations: [toolDeclaration] }],
+            temperature: 0.1,
+          },
+          contents
+        });
+        console.log(`[PantryCategorize] Gemini API call succeeded`);
+      } catch (apiError) {
+        console.error(`[PantryCategorize] Gemini API error on iteration ${iteration + 1}:`, apiError);
+        // If we have some items already, return them; otherwise throw
+        if (categorizedItems.length > 0) {
+          console.log(`[PantryCategorize] Returning ${categorizedItems.length} items collected before error`);
+          break;
+        }
+        throw apiError;
+      }
 
       const candidate = response.candidates?.[0];
       if (!candidate?.content?.parts) {
+        console.error('[PantryCategorize] No candidate content in response');
         throw new Error('No response from Gemini');
       }
 
