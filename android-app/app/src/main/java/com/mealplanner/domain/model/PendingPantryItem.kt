@@ -29,6 +29,7 @@ data class IngredientSource(
     val ingredientIndex: Int,
     val originalQuantity: Double = 0.0,
     val originalUnit: String = "",
+    val originalPreparation: String? = null,  // e.g., "torn", "minced"
     val recipeSteps: List<RecipeStepSource> = emptyList()
 )
 

@@ -308,6 +308,7 @@ class MealPlanRepositoryImpl @Inject constructor(
         newIngredientName: String,
         newQuantity: Double,
         newUnit: String,
+        newPreparation: String?,
         newSteps: List<CookingStep>
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
@@ -330,7 +331,7 @@ class MealPlanRepositoryImpl @Inject constructor(
                 name = newIngredientName,
                 quantity = newQuantity,
                 unit = newUnit,
-                preparation = recipeData.ingredients[ingredientIndex].preparation
+                preparation = newPreparation  // AI may update or nullify preparation style
             )
 
             // Convert AI-updated steps to JSON format

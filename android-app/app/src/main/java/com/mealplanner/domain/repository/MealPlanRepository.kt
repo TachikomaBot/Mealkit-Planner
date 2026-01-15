@@ -123,7 +123,7 @@ interface MealPlanRepository {
     /**
      * Update a recipe with AI-determined substitution values.
      * Used when the AI has processed a substitution and returned updated recipe name,
-     * ingredient name, quantity, unit, and updated cooking steps.
+     * ingredient name, quantity, unit, preparation style, and updated cooking steps.
      *
      * @param plannedRecipeId The ID of the planned recipe to update
      * @param ingredientIndex The index of the ingredient in the recipe's ingredients list
@@ -131,6 +131,7 @@ interface MealPlanRepository {
      * @param newIngredientName The new ingredient name
      * @param newQuantity The AI-adjusted ingredient quantity
      * @param newUnit The AI-adjusted ingredient unit
+     * @param newPreparation The AI-adjusted preparation style (null to remove)
      * @param newSteps The AI-updated cooking steps (may have instruction changes)
      */
     suspend fun updateRecipeWithSubstitution(
@@ -140,6 +141,7 @@ interface MealPlanRepository {
         newIngredientName: String,
         newQuantity: Double,
         newUnit: String,
+        newPreparation: String?,
         newSteps: List<CookingStep>
     ): Result<Unit>
 }

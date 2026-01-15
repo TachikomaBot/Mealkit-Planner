@@ -386,7 +386,8 @@ class ShoppingRepositoryImpl @Inject constructor(
     private data class StoredIngredientJson(
         val name: String,
         val quantity: Double = 1.0,
-        val unit: String = ""
+        val unit: String = "",
+        val preparation: String? = null  // e.g., "torn", "minced"
     )
 
     @Serializable
@@ -612,12 +613,17 @@ class ShoppingRepositoryImpl @Inject constructor(
                         val recipe = mealPlanDao.getPlannedRecipeById(entity.plannedRecipeId)
                         // Parse steps from recipe JSON
                         val steps = recipe?.recipeJson?.let { parseStepsFromRecipeJson(it) } ?: emptyList()
+                        // Parse preparation from recipe JSON at the specific ingredient index
+                        val preparation = recipe?.recipeJson?.let {
+                            parseIngredientPreparation(it, entity.ingredientIndex)
+                        }
                         IngredientSource(
                             plannedRecipeId = entity.plannedRecipeId,
                             recipeName = recipe?.recipeName ?: "Unknown Recipe",
                             ingredientIndex = entity.ingredientIndex,
                             originalQuantity = entity.originalQuantity,
                             originalUnit = entity.originalUnit,
+                            originalPreparation = preparation,
                             recipeSteps = steps
                         )
                     }
@@ -634,6 +640,17 @@ class ShoppingRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             android.util.Log.e("ShoppingRepo", "Failed to parse recipe steps: ${e.message}")
             emptyList()
+        }
+    }
+
+    // Parse preparation style for a specific ingredient from recipe JSON
+    private fun parseIngredientPreparation(recipeJson: String, ingredientIndex: Int): String? {
+        return try {
+            val recipe = json.decodeFromString<StoredRecipeJson>(recipeJson)
+            recipe.ingredients.getOrNull(ingredientIndex)?.preparation
+        } catch (e: Exception) {
+            android.util.Log.e("ShoppingRepo", "Failed to parse ingredient preparation: ${e.message}")
+            null
         }
     }
 

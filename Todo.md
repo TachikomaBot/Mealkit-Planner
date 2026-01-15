@@ -26,17 +26,20 @@
 - [x] Auto-add ingredients to pantry after completing grocery shopping
   - ~~Find/restore the "mark shopping completed" button~~ ✓ Working
   - AI-powered categorization via Gemini ✓
-  - [ ] Show confirmation screen before adding items
-  - [ ] Allow user to edit quantities on confirmation screen
+  - [x] Show confirmation screen before adding items
+  - [x] Allow user to edit quantities and names on confirmation screen
 - [ ] Auto-deduct ingredients from pantry after making a recipe
   - Show confirmation screen before deducting
   - Allow user to edit deductions to match actual usage
-- [ ] User should be able to edit items from confirmation screen to align with actual stock levels
 
-### Ingredient Substitution
-- [ ] Long-press on grocery list item to substitute ingredient
-- [ ] Propagate substitution back to the recipe(s) using that ingredient
-  - Example: fresh corn → frozen corn should update recipe instructions
+### Ingredient Substitution - **COMPLETE**
+- [x] Edit ingredient names on confirmation screen to substitute
+- [x] AI-powered substitution propagates back to recipe(s):
+  - Updates recipe name if ingredient is in the name (e.g., "Honey Garlic Salmon" → "Honey Garlic Tilapia")
+  - Converts quantities appropriately (e.g., fresh herbs → dried uses 1/3 amount)
+  - Updates preparation style (e.g., removes "torn" for dried herbs)
+  - Updates recipe cooking instructions to reference new ingredient
+  - Handles multiple recipes using the same ingredient
 
 ---
 

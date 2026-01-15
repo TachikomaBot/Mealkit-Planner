@@ -210,6 +210,7 @@ export interface SubstitutionRequest {
     name: string;
     quantity: number;
     unit: string;
+    preparation: string | null;  // e.g., "torn", "minced"
   };
   newIngredientName: string;
   steps: RecipeStep[];  // Recipe steps to potentially update
@@ -226,6 +227,7 @@ export interface SubstitutionResponse {
     name: string;
     quantity: number;
     unit: string;
+    preparation: string | null;  // e.g., "torn", "minced" - null to remove
   };
   updatedSteps: RecipeStep[];  // Updated recipe steps
   notes: string | null;  // e.g., "Dried herbs are more concentrated than fresh"

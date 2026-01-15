@@ -92,6 +92,7 @@ Node.js/Express API providing:
 - `POST /api/meal-plan/generate-async` - AI meal plan generation
 - `POST /api/meal-plan/polish-grocery-list-async` - Grocery list cleanup
 - `POST /api/meal-plan/categorize-pantry-items-async` - AI pantry categorization
+- `POST /api/meal-plan/process-substitution` - AI ingredient substitution
 
 See [backend/README.md](backend/README.md) for full API documentation.
 
@@ -169,22 +170,37 @@ When "Done Shopping" is pressed in the Grocery List:
 ```
 MealPlanScreen
     └─> MealPlanViewModel.markShoppingComplete()
-        └─> UI shows "Stocking your pantry..." loading screen
-        └─> ManageShoppingListUseCase.completeShoppingTrip(mealPlanId)
-            ├─> ShoppingRepository.getCheckedItems() - get all checked items
-            ├─> ShoppingRepository.categorizeForPantry() - AI categorization
-            │   ├─> POST /api/meal-plan/categorize-pantry-items-async
-            │   ├─> Poll job status until complete
-            │   └─> Returns CategorizedPantryItem[] with smart categories
-            ├─> (Fallback to local mapping if AI fails)
-            ├─> Map to PantryItems with AI-determined:
-            │   ├─> Category (PRODUCE, PROTEIN, DAIRY, etc.)
-            │   ├─> TrackingStyle (STOCK_LEVEL, COUNT, PRECISE)
-            │   └─> ExpiryDays (based on item type)
-            └─> PantryRepository.addFromShoppingList() - insert to pantry
-        └─> MealPlanRepository.markShoppingComplete() - set flag
-        └─> Show confirmation dialog with item count
+        └─> Show confirmation screen with editable items
+        └─> User can edit quantities (e.g., bought 450g instead of 300g)
+        └─> User can edit names (substitutions: fresh corn → frozen corn)
+        └─> On confirm:
+            ├─> Process substitutions via AI
+            │   ├─> POST /api/meal-plan/process-substitution
+            │   ├─> AI updates recipe name, quantities, preparation, instructions
+            │   └─> MealPlanRepository.updateRecipeWithSubstitution()
+            ├─> UI shows "Stocking your pantry..." loading screen
+            └─> ManageShoppingListUseCase.completeShoppingTrip(mealPlanId)
+                ├─> ShoppingRepository.getCheckedItems() - get all checked items
+                ├─> ShoppingRepository.categorizeForPantry() - AI categorization
+                │   ├─> POST /api/meal-plan/categorize-pantry-items-async
+                │   ├─> Poll job status until complete
+                │   └─> Returns CategorizedPantryItem[] with smart categories
+                ├─> (Fallback to local mapping if AI fails)
+                ├─> Map to PantryItems with AI-determined:
+                │   ├─> Category (PRODUCE, PROTEIN, DAIRY, etc.)
+                │   ├─> TrackingStyle (STOCK_LEVEL, COUNT, PRECISE)
+                │   └─> ExpiryDays (based on item type)
+                └─> PantryRepository.addFromShoppingList() - insert to pantry
+            └─> MealPlanRepository.markShoppingComplete() - set flag
+            └─> Show confirmation dialog with item count
 ```
+
+**AI Ingredient Substitution (Gemini):**
+- Updates recipe name if ingredient is in the name (e.g., "Honey Garlic Salmon" → "Honey Garlic Tilapia")
+- Converts quantities appropriately (e.g., fresh herbs → dried uses 1/3 amount)
+- Updates preparation style (e.g., removes "torn" for dried herbs)
+- Updates recipe cooking instructions to reference new ingredient
+- Falls back to simple name update if AI unavailable
 
 **AI Categorization (Gemini):**
 - Intelligently assigns pantry categories (e.g., "Salmon Fillets" → PROTEIN)
@@ -195,9 +211,10 @@ MealPlanScreen
 **Key files:**
 - `ManageShoppingListUseCase.kt` - orchestrates the pantry sync logic
 - `ShoppingRepositoryImpl.kt` - implements AI categorization with job polling
-- `MealPlanViewModel.kt` - calls use case, manages completion state
-- `MealPlanScreen.kt` - shows loading screen and completion dialog
-- `backend/src/services/geminiService.ts` - `categorizePantryItems()` function
+- `MealPlanViewModel.kt` - calls use case, manages completion state, processes substitutions
+- `MealPlanRepositoryImpl.kt` - updates recipe JSON with substitution changes
+- `MealPlanScreen.kt` - shows confirmation screen, loading screen, and completion dialog
+- `backend/src/services/geminiService.ts` - `categorizePantryItems()` and `processSubstitution()` functions
 
 ### Cooking → Pantry Deduction
 
@@ -238,14 +255,14 @@ See [NATIVE_KOTLIN_PROGRESS.md](NATIVE_KOTLIN_PROGRESS.md) for detailed progress
 - Foreground service for background generation
 - Room database with full schema
 - Shopping → Pantry flow with AI-powered categorization
+- Confirmation screen before adding items to pantry (with editable quantities/names)
+- AI-powered ingredient substitution (updates recipes intelligently)
 - Recipe rating and history
 - Test Mode for data isolation during development
 
 **In Progress (see Todo.md):**
-- Pantry sync improvements (confirmation screens before add/deduct)
-- Ingredient substitution
+- Cooking → Pantry deduction flow (with confirmation screen)
 - Recipe units refinement
-- Cooking → Pantry deduction flow
 
 ---
 

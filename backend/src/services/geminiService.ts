@@ -1558,16 +1558,21 @@ export async function processSubstitution(
     `Step ${i + 1}: ${step.title}\n${step.substeps.map(s => `  - ${s}`).join('\n')}`
   ).join('\n\n');
 
+  const preparationText = request.originalIngredient.preparation
+    ? ` (preparation: "${request.originalIngredient.preparation}")`
+    : '';
+
   const prompt = `You are a culinary expert helping with ingredient substitutions in recipes.
 
 TASK: A cook is substituting an ingredient in a recipe. You must:
 1. Determine if the recipe NAME should be updated
 2. CONVERT the ingredient quantity appropriately for the substitution
-3. UPDATE any recipe instructions that reference the original ingredient
-4. Provide any helpful cooking notes
+3. UPDATE the preparation style if needed (or set to null if not applicable)
+4. UPDATE any recipe instructions that reference the original ingredient
+5. Provide any helpful cooking notes
 
 RECIPE: "${request.recipeName}"
-ORIGINAL INGREDIENT: ${request.originalIngredient.quantity} ${request.originalIngredient.unit} ${request.originalIngredient.name}
+ORIGINAL INGREDIENT: ${request.originalIngredient.quantity} ${request.originalIngredient.unit} ${request.originalIngredient.name}${preparationText}
 NEW INGREDIENT: ${request.newIngredientName}
 
 RECIPE STEPS:
@@ -1597,6 +1602,15 @@ For ONION → ONION POWDER: 1 medium onion ≈ 1 tbsp powder
 For PROTEIN SWAPS (salmon↔tilapia, chicken↔pork): Keep same weight
 For FRESH↔FROZEN vegetables: Same quantity
 
+PREPARATION STYLE UPDATES:
+- The "preparation" field describes how to prep the ingredient (e.g., "torn", "minced", "diced")
+- For fresh→dried herb substitutions: set preparation to null (dried herbs don't need tearing/chopping)
+- For other substitutions: update preparation if it no longer applies, or keep it if still relevant
+- Examples:
+  - Fresh basil "torn" → Dried basil: preparation = null
+  - Fresh garlic "minced" → Garlic powder: preparation = null
+  - Chicken breast "diced" → Pork tenderloin "diced": preparation = "diced" (unchanged)
+
 RECIPE NAME UPDATES:
 - Update ONLY if the original ingredient appears in the recipe name
 - "Honey Garlic Salmon" + (Salmon → Tilapia) = "Honey Garlic Tilapia"
@@ -1617,7 +1631,8 @@ Return JSON (you MUST convert quantities for herb substitutions):
   "updatedIngredient": {
     "name": "the new ingredient name exactly as provided",
     "quantity": 1.0,
-    "unit": "tbsp"
+    "unit": "tbsp",
+    "preparation": null
   },
   "updatedSteps": [
     {"title": "Step title", "substeps": ["substep 1", "substep 2"]}
@@ -1661,6 +1676,7 @@ Return JSON (you MUST convert quantities for herb substitutions):
         name: request.newIngredientName,
         quantity: request.originalIngredient.quantity,
         unit: request.originalIngredient.unit,
+        preparation: request.originalIngredient.preparation,
       },
       updatedSteps: request.steps,  // Return original steps unchanged
       notes: null,

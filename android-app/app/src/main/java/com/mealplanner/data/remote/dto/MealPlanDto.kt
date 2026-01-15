@@ -203,7 +203,8 @@ data class SubstitutionRequest(
 data class OriginalIngredientDto(
     val name: String,
     val quantity: Double,
-    val unit: String
+    val unit: String,
+    val preparation: String? = null
 )
 
 @Serializable
@@ -224,5 +225,6 @@ data class SubstitutionResponse(
 data class UpdatedIngredientDto(
     val name: String,
     val quantity: Double,
-    val unit: String
+    val unit: String,
+    val preparation: String? = null  // null to remove preparation style
 )

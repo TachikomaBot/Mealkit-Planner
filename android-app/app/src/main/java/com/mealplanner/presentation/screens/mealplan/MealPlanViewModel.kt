@@ -477,7 +477,8 @@ class MealPlanViewModel @Inject constructor(
                                     originalIngredient = OriginalIngredientDto(
                                         name = item.originalName,
                                         quantity = source.originalQuantity,
-                                        unit = source.originalUnit
+                                        unit = source.originalUnit,
+                                        preparation = source.originalPreparation
                                     ),
                                     newIngredientName = item.name,
                                     steps = stepsDto
@@ -504,6 +505,7 @@ class MealPlanViewModel @Inject constructor(
                                     newIngredientName = aiResponse.updatedIngredient.name,
                                     newQuantity = aiResponse.updatedIngredient.quantity,
                                     newUnit = aiResponse.updatedIngredient.unit,
+                                    newPreparation = aiResponse.updatedIngredient.preparation,
                                     newSteps = updatedSteps
                                 )
                             } catch (e: Exception) {
