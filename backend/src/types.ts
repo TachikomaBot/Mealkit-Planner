@@ -202,3 +202,33 @@ export interface PantryCategorizeProgress {
   total: number;
   message?: string;
 }
+
+// Ingredient substitution types
+export interface SubstitutionRequest {
+  recipeName: string;
+  originalIngredient: {
+    name: string;
+    quantity: number;
+    unit: string;
+  };
+  newIngredientName: string;
+}
+
+export interface SubstitutionResponse {
+  updatedRecipeName: string;
+  updatedIngredient: {
+    name: string;
+    quantity: number;
+    unit: string;
+  };
+  notes: string | null;  // e.g., "Dried herbs are more concentrated than fresh"
+}
+
+export interface SubstitutionJob {
+  id: string;
+  status: JobStatus;
+  result: SubstitutionResponse | null;
+  error: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}

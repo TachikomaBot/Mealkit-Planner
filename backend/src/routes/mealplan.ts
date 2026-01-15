@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { loadRecipes } from '../services/recipeService.js';
-import { generateMealPlan, polishGroceryList, categorizePantryItems } from '../services/geminiService.js';
+import { generateMealPlan, polishGroceryList, categorizePantryItems, processSubstitution } from '../services/geminiService.js';
 import {
   createJob,
   getJob,
@@ -24,7 +24,7 @@ import {
   failPantryCategorizeJob,
   deletePantryCategorizeJob,
 } from '../services/jobService.js';
-import type { MealPlanRequest, ProgressEvent, GroceryPolishRequest, GroceryPolishProgress, PantryCategorizeRequest, PantryCategorizeProgress } from '../types.js';
+import type { MealPlanRequest, ProgressEvent, GroceryPolishRequest, GroceryPolishProgress, PantryCategorizeRequest, PantryCategorizeProgress, SubstitutionRequest } from '../types.js';
 
 const router = Router();
 
@@ -521,6 +521,62 @@ router.delete('/pantry-categorize-jobs/:id', (req, res) => {
   }
 
   res.json({ success: true });
+});
+
+// ============================================================================
+// Ingredient Substitution Endpoint
+// ============================================================================
+
+/**
+ * POST /api/meal-plan/process-substitution
+ * Process an ingredient substitution using Gemini AI.
+ * Updates recipe names when main ingredients change and adjusts quantities
+ * for herb/spice substitutions (e.g., fresh → dried uses 1/3 the amount).
+ *
+ * Body:
+ * {
+ *   recipeName: "Honey Garlic Salmon",
+ *   originalIngredient: { name: "Salmon", quantity: 450, unit: "g" },
+ *   newIngredientName: "Tilapia"
+ * }
+ *
+ * Headers:
+ *   X-Gemini-Key: Your Gemini API key
+ *
+ * Returns:
+ * {
+ *   updatedRecipeName: "Honey Garlic Tilapia",
+ *   updatedIngredient: { name: "Tilapia", quantity: 450, unit: "g" },
+ *   notes: null
+ * }
+ */
+router.post('/process-substitution', async (req, res) => {
+  const apiKey = (req.headers['x-gemini-key'] as string) || process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    return res.status(401).json({ error: 'Gemini API key required in X-Gemini-Key header or GEMINI_API_KEY env var' });
+  }
+
+  const request = req.body as SubstitutionRequest;
+
+  // Validate request
+  if (!request.recipeName || !request.originalIngredient || !request.newIngredientName) {
+    return res.status(400).json({ error: 'recipeName, originalIngredient, and newIngredientName are required' });
+  }
+
+  if (!request.originalIngredient.name || request.originalIngredient.quantity === undefined) {
+    return res.status(400).json({ error: 'originalIngredient must have name and quantity' });
+  }
+
+  try {
+    console.log(`[Substitution] Processing: ${request.originalIngredient.name} → ${request.newIngredientName} in "${request.recipeName}"`);
+    const result = await processSubstitution(apiKey, request);
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Substitution] Error: ${message}`);
+    res.status(500).json({ error: message });
+  }
 });
 
 export default router;

@@ -525,7 +525,9 @@ class ShoppingRepositoryImpl @Inject constructor(
                         IngredientSource(
                             plannedRecipeId = entity.plannedRecipeId,
                             recipeName = recipe?.recipeName ?: "Unknown Recipe",
-                            ingredientIndex = entity.ingredientIndex
+                            ingredientIndex = entity.ingredientIndex,
+                            originalQuantity = entity.originalQuantity,
+                            originalUnit = entity.originalUnit
                         )
                     }
                 }

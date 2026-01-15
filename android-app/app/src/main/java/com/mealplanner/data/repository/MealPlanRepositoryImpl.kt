@@ -262,6 +262,8 @@ class MealPlanRepositoryImpl @Inject constructor(
         ingredientIndex: Int,
         newName: String
     ): Result<Unit> = withContext(Dispatchers.IO) {
+        // Simple fallback method - just updates the ingredient name without AI logic
+        // Used when AI substitution fails
         try {
             val entity = mealPlanDao.getPlannedRecipeById(plannedRecipeId)
                 ?: return@withContext Result.failure(Exception("Recipe not found"))
@@ -281,52 +283,73 @@ class MealPlanRepositoryImpl @Inject constructor(
             val originalIngredient = updatedIngredients[ingredientIndex]
             updatedIngredients[ingredientIndex] = originalIngredient.copy(name = newName)
 
-            // Check if the original ingredient name appears in the recipe name
-            // e.g., "Honey Garlic Salmon" should become "Honey Garlic Tilapia"
-            val originalNameWords = originalIngredient.name.split(" ").map { it.lowercase() }
-            val updatedRecipeName = if (originalNameWords.any { word ->
-                entity.recipeName.lowercase().contains(word) && word.length > 3
-            }) {
-                // Replace the ingredient name in the recipe title (case-insensitive)
-                var newRecipeName = entity.recipeName
-                for (word in originalNameWords) {
-                    if (word.length > 3) {  // Only replace meaningful words
-                        val regex = Regex("(?i)\\b${Regex.escape(word)}\\b")
-                        val newWord = newName.split(" ").firstOrNull { it.length > 3 } ?: newName
-                        newRecipeName = newRecipeName.replace(regex, newWord)
-                    }
-                }
-                newRecipeName
-            } else {
-                entity.recipeName
+            // Create updated recipe (ingredient name only, no recipe name changes in fallback mode)
+            val updatedRecipe = recipeData.copy(ingredients = updatedIngredients)
+
+            // Serialize and save
+            val updatedJson = json.encodeToString(RecipeJson.serializer(), updatedRecipe)
+            mealPlanDao.updatePlannedRecipeJson(plannedRecipeId, updatedJson)
+
+            android.util.Log.d("MealPlanRepo",
+                "Fallback update: ingredient '${originalIngredient.name}' -> '$newName' in recipe ${entity.recipeName}"
+            )
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            android.util.Log.e("MealPlanRepo", "Failed to update recipe ingredient: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun updateRecipeWithSubstitution(
+        plannedRecipeId: Long,
+        ingredientIndex: Int,
+        newRecipeName: String,
+        newIngredientName: String,
+        newQuantity: Double,
+        newUnit: String
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val entity = mealPlanDao.getPlannedRecipeById(plannedRecipeId)
+                ?: return@withContext Result.failure(Exception("Recipe not found"))
+
+            // Parse the recipe JSON
+            val recipeData = json.decodeFromString(RecipeJson.serializer(), entity.recipeJson)
+
+            // Check if the ingredient index is valid
+            if (ingredientIndex !in recipeData.ingredients.indices) {
+                return@withContext Result.failure(
+                    Exception("Invalid ingredient index: $ingredientIndex (recipe has ${recipeData.ingredients.size} ingredients)")
+                )
             }
 
-            // Create updated recipe (also update name in JSON)
+            // Create updated ingredients list with AI-determined values
+            val updatedIngredients = recipeData.ingredients.toMutableList()
+            updatedIngredients[ingredientIndex] = IngredientJson(
+                name = newIngredientName,
+                quantity = newQuantity,
+                unit = newUnit,
+                preparation = recipeData.ingredients[ingredientIndex].preparation
+            )
+
+            // Create updated recipe with AI-determined name
             val updatedRecipe = recipeData.copy(
-                name = updatedRecipeName,
+                name = newRecipeName,
                 ingredients = updatedIngredients
             )
 
             // Serialize and save
             val updatedJson = json.encodeToString(RecipeJson.serializer(), updatedRecipe)
 
-            if (updatedRecipeName != entity.recipeName) {
-                // Recipe name changed, update both fields
-                mealPlanDao.updatePlannedRecipe(plannedRecipeId, updatedRecipeName, updatedJson)
-                android.util.Log.d("MealPlanRepo",
-                    "Updated recipe '${entity.recipeName}' -> '$updatedRecipeName' and ingredient '${originalIngredient.name}' -> '$newName'"
-                )
-            } else {
-                // Only ingredient changed
-                mealPlanDao.updatePlannedRecipeJson(plannedRecipeId, updatedJson)
-                android.util.Log.d("MealPlanRepo",
-                    "Updated ingredient in recipe ${entity.recipeName}: '${originalIngredient.name}' -> '$newName'"
-                )
-            }
+            // Update both recipe name and JSON
+            mealPlanDao.updatePlannedRecipe(plannedRecipeId, newRecipeName, updatedJson)
+            android.util.Log.d("MealPlanRepo",
+                "AI substitution applied: recipe='$newRecipeName', ingredient='$newIngredientName', qty=$newQuantity $newUnit"
+            )
 
             Result.success(Unit)
         } catch (e: Exception) {
-            android.util.Log.e("MealPlanRepo", "Failed to update recipe ingredient: ${e.message}", e)
+            android.util.Log.e("MealPlanRepo", "Failed to apply AI substitution: ${e.message}", e)
             Result.failure(e)
         }
     }

@@ -9,6 +9,8 @@ import com.mealplanner.data.remote.dto.MealPlanResponse
 import com.mealplanner.data.remote.dto.PantryCategorizeJobResponse
 import com.mealplanner.data.remote.dto.PantryCategorizeRequest
 import com.mealplanner.data.remote.dto.StartJobResponse
+import com.mealplanner.data.remote.dto.SubstitutionRequest
+import com.mealplanner.data.remote.dto.SubstitutionResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -78,4 +80,10 @@ interface MealPlanApi {
     suspend fun deletePantryCategorizeJob(
         @Path("jobId") jobId: String
     )
+
+    // Ingredient substitution endpoint
+    @POST("api/meal-plan/process-substitution")
+    suspend fun processSubstitution(
+        @Body request: SubstitutionRequest
+    ): SubstitutionResponse
 }

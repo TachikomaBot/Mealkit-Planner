@@ -3,6 +3,9 @@ package com.mealplanner.presentation.screens.mealplan
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mealplanner.data.remote.api.MealPlanApi
+import com.mealplanner.data.remote.dto.OriginalIngredientDto
+import com.mealplanner.data.remote.dto.SubstitutionRequest
 import com.mealplanner.domain.model.GeneratedMealPlan
 import com.mealplanner.domain.model.GenerationProgress
 import com.mealplanner.domain.model.IngredientSource
@@ -34,6 +37,7 @@ class MealPlanViewModel @Inject constructor(
     private val recipeRepository: RecipeRepository,
     private val shoppingRepository: ShoppingRepository,
     private val manageShoppingListUseCase: ManageShoppingListUseCase,
+    private val mealPlanApi: MealPlanApi,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -455,15 +459,48 @@ class MealPlanViewModel @Inject constructor(
                 _uiState.value = MealPlanUiState.StockingPantry
 
                 try {
-                    // 1. Propagate name substitutions to recipes
+                    // 1. Propagate name substitutions to recipes using AI
                     for (item in current.items.filter { it.hasSubstitution }) {
-                        android.util.Log.d("MealPlanVM", "Propagating substitution: '${item.originalName}' -> '${item.name}'")
+                        android.util.Log.d("MealPlanVM", "Processing substitution: '${item.originalName}' -> '${item.name}'")
+
                         for (source in item.sources) {
-                            mealPlanRepository.updateRecipeIngredient(
-                                plannedRecipeId = source.plannedRecipeId,
-                                ingredientIndex = source.ingredientIndex,
-                                newName = item.name
-                            )
+                            try {
+                                // Call AI to intelligently process the substitution
+                                val substitutionRequest = SubstitutionRequest(
+                                    recipeName = source.recipeName,
+                                    originalIngredient = OriginalIngredientDto(
+                                        name = item.originalName,
+                                        quantity = source.originalQuantity,
+                                        unit = source.originalUnit
+                                    ),
+                                    newIngredientName = item.name
+                                )
+
+                                val aiResponse = mealPlanApi.processSubstitution(substitutionRequest)
+                                android.util.Log.d("MealPlanVM",
+                                    "AI substitution result: recipe='${aiResponse.updatedRecipeName}', " +
+                                    "ingredient=${aiResponse.updatedIngredient.quantity} ${aiResponse.updatedIngredient.unit} ${aiResponse.updatedIngredient.name}" +
+                                    (aiResponse.notes?.let { ", notes=$it" } ?: "")
+                                )
+
+                                // Apply the AI-determined updates
+                                mealPlanRepository.updateRecipeWithSubstitution(
+                                    plannedRecipeId = source.plannedRecipeId,
+                                    ingredientIndex = source.ingredientIndex,
+                                    newRecipeName = aiResponse.updatedRecipeName,
+                                    newIngredientName = aiResponse.updatedIngredient.name,
+                                    newQuantity = aiResponse.updatedIngredient.quantity,
+                                    newUnit = aiResponse.updatedIngredient.unit
+                                )
+                            } catch (e: Exception) {
+                                // If AI call fails, fall back to simple name update
+                                android.util.Log.w("MealPlanVM", "AI substitution failed, using fallback: ${e.message}")
+                                mealPlanRepository.updateRecipeIngredient(
+                                    plannedRecipeId = source.plannedRecipeId,
+                                    ingredientIndex = source.ingredientIndex,
+                                    newName = item.name
+                                )
+                            }
                         }
                     }
 

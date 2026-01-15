@@ -189,3 +189,32 @@ data class PantryCategorizeProgressDto(
     val total: Int,
     val message: String? = null
 )
+
+// Ingredient substitution DTOs
+@Serializable
+data class SubstitutionRequest(
+    val recipeName: String,
+    val originalIngredient: OriginalIngredientDto,
+    val newIngredientName: String
+)
+
+@Serializable
+data class OriginalIngredientDto(
+    val name: String,
+    val quantity: Double,
+    val unit: String
+)
+
+@Serializable
+data class SubstitutionResponse(
+    val updatedRecipeName: String,
+    val updatedIngredient: UpdatedIngredientDto,
+    val notes: String? = null
+)
+
+@Serializable
+data class UpdatedIngredientDto(
+    val name: String,
+    val quantity: Double,
+    val unit: String
+)

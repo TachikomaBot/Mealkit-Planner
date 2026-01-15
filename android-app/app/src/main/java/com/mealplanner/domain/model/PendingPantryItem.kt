@@ -26,5 +26,7 @@ data class PendingPantryItem(
 data class IngredientSource(
     val plannedRecipeId: Long,
     val recipeName: String,
-    val ingredientIndex: Int
+    val ingredientIndex: Int,
+    val originalQuantity: Double = 0.0,
+    val originalUnit: String = ""
 )

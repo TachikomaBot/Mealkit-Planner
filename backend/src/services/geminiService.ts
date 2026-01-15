@@ -6,6 +6,8 @@ import type {
   PantryItem,
   UserPreferences,
   ProgressEvent,
+  SubstitutionRequest,
+  SubstitutionResponse,
 } from '../types.js';
 
 // ============================================================================
@@ -1528,4 +1530,110 @@ function mapShoppingCategory(shoppingCategory: string): string {
   if (cat.includes('bakery') || cat.includes('bread')) return 'DRY_GOODS';
 
   return 'OTHER';
+}
+
+// ============================================================================
+// Ingredient Substitution
+// ============================================================================
+
+/**
+ * Process an ingredient substitution using Gemini AI.
+ * Handles updating recipe names and adjusting quantities when ingredients are swapped.
+ *
+ * Examples:
+ * - "Salmon" → "Tilapia" in "Honey Garlic Salmon" → "Honey Garlic Tilapia"
+ * - "Fresh Thyme" → "Dried Thyme" → quantity reduced to 1/3
+ * - "Fresh Corn" → "Frozen Corn" → name updated, quantity unchanged
+ */
+export async function processSubstitution(
+  apiKey: string,
+  request: SubstitutionRequest
+): Promise<SubstitutionResponse> {
+  console.log(`[Substitution] Processing: ${request.originalIngredient.name} → ${request.newIngredientName} in "${request.recipeName}"`);
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  const prompt = `You are a culinary expert helping with ingredient substitutions in recipes.
+
+TASK: A cook is substituting an ingredient in a recipe. Determine:
+1. If the recipe NAME should be updated to reflect the substitution
+2. If the ingredient QUANTITY should be adjusted for the substitution
+3. Any notes the cook should know
+
+RECIPE: "${request.recipeName}"
+ORIGINAL INGREDIENT: ${request.originalIngredient.quantity} ${request.originalIngredient.unit} ${request.originalIngredient.name}
+NEW INGREDIENT: ${request.newIngredientName}
+
+RULES:
+
+RECIPE NAME UPDATES:
+- If the original ingredient is a KEY component that appears in the recipe name, update the name
+- Examples:
+  - "Honey Garlic Salmon" + (Salmon → Tilapia) = "Honey Garlic Tilapia"
+  - "Beef Tacos" + (Beef → Chicken) = "Chicken Tacos"
+  - "Lemon Herb Chicken" + (Lemon → Lime) = "Lime Herb Chicken"
+- If the ingredient is NOT in the recipe name, keep the name unchanged
+- Preserve the recipe name's style and structure
+
+QUANTITY ADJUSTMENTS:
+- Fresh herbs → Dried herbs: Use 1/3 the amount (e.g., 3 tbsp fresh → 1 tbsp dried)
+- Dried herbs → Fresh herbs: Use 3x the amount
+- Fresh garlic → Garlic powder: 1 clove ≈ 1/4 tsp powder
+- Fresh ginger → Ground ginger: 1 tbsp fresh ≈ 1/4 tsp ground
+- Regular onion → Onion powder: 1 medium onion ≈ 1 tbsp powder
+- Different proteins (salmon → tilapia, chicken → pork): Keep same weight
+- Fresh vegetables → Frozen: Same quantity
+- Same category swaps (one fish for another, one cheese for another): Usually same quantity
+
+Return JSON:
+{
+  "updatedRecipeName": "the new recipe name (or same if unchanged)",
+  "updatedIngredient": {
+    "name": "the new ingredient name",
+    "quantity": 1.5,
+    "unit": "tbsp"
+  },
+  "notes": "Any helpful cooking notes, or null if none needed"
+}`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        temperature: 0.2,
+        maxOutputTokens: 1000,
+        thinkingConfig: {
+          thinkingLevel: ThinkingLevel.LOW,  // Simple task, don't need much thinking
+        },
+      }
+    });
+
+    const text = response.text?.trim() || '{}';
+    console.log(`[Substitution] Got response: ${text.slice(0, 200)}`);
+
+    const result = JSON.parse(text) as SubstitutionResponse;
+
+    // Validate the response
+    if (!result.updatedRecipeName || !result.updatedIngredient) {
+      throw new Error('Invalid response structure');
+    }
+
+    console.log(`[Substitution] Result: "${result.updatedRecipeName}", ${result.updatedIngredient.quantity} ${result.updatedIngredient.unit} ${result.updatedIngredient.name}`);
+
+    return result;
+  } catch (error) {
+    console.error('[Substitution] Error:', error);
+    // Fallback: return original values unchanged
+    return {
+      updatedRecipeName: request.recipeName,
+      updatedIngredient: {
+        name: request.newIngredientName,
+        quantity: request.originalIngredient.quantity,
+        unit: request.originalIngredient.unit,
+      },
+      notes: null,
+    };
+  }
 }
