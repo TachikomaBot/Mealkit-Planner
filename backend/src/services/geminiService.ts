@@ -1392,26 +1392,22 @@ Call add_pantry_item for EACH item in the list. Do not skip any items.`;
         unit: {
           type: Type.STRING,
           description: 'Unit of measurement',
-          // @ts-expect-error - enum is valid per Gemini API
           enum: ['GRAMS', 'MILLILITERS', 'UNITS', 'PIECES', 'BUNCH']
         },
         category: {
           type: Type.STRING,
           description: 'Pantry category',
-          // @ts-expect-error - enum is valid per Gemini API
           enum: ['PRODUCE', 'PROTEIN', 'DAIRY', 'DRY_GOODS', 'SPICE', 'OILS', 'CONDIMENT', 'FROZEN', 'OTHER']
         },
         trackingStyle: {
           type: Type.STRING,
           description: 'How to track quantity',
-          // @ts-expect-error - enum is valid per Gemini API
           enum: ['STOCK_LEVEL', 'COUNT', 'PRECISE']
         },
         stockLevel: {
           type: Type.STRING,
           description: 'Stock level (only for STOCK_LEVEL tracking style)',
           nullable: true,
-          // @ts-expect-error - enum is valid per Gemini API
           enum: ['FULL', 'HIGH', 'MEDIUM', 'LOW']
         },
         expiryDays: {
