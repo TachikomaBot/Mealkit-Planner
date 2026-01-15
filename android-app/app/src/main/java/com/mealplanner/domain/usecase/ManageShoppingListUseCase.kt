@@ -163,15 +163,13 @@ class ManageShoppingListUseCase @Inject constructor(
             else -> TrackingStyle.PRECISE
         }
 
-        val stockLevel = if (trackingStyle == TrackingStyle.STOCK_LEVEL) {
-            when (dto.stockLevel) {
-                "FULL" -> StockLevel.PLENTY
-                "HIGH" -> StockLevel.PLENTY
-                "MEDIUM" -> StockLevel.SOME
-                "LOW" -> StockLevel.LOW
-                else -> StockLevel.PLENTY  // New purchases start as FULL
-            }
-        } else null
+        val stockLevel = when (dto.stockLevel) {
+            "FULL" -> StockLevel.PLENTY
+            "HIGH" -> StockLevel.PLENTY
+            "MEDIUM" -> StockLevel.SOME
+            "LOW" -> StockLevel.LOW
+            else -> StockLevel.PLENTY  // New purchases start as FULL
+        }
 
         return PantryItem(
             name = dto.name,
