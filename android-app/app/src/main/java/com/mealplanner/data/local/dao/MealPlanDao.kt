@@ -47,6 +47,9 @@ interface MealPlanDao {
     @Query("UPDATE planned_recipes SET recipeJson = :recipeJson WHERE id = :id")
     suspend fun updatePlannedRecipeJson(id: Long, recipeJson: String)
 
+    @Query("UPDATE planned_recipes SET recipeName = :recipeName, recipeJson = :recipeJson WHERE id = :id")
+    suspend fun updatePlannedRecipe(id: Long, recipeName: String, recipeJson: String)
+
     // Recipe History
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRecipeHistory(history: RecipeHistoryEntity): Long

@@ -281,16 +281,49 @@ class MealPlanRepositoryImpl @Inject constructor(
             val originalIngredient = updatedIngredients[ingredientIndex]
             updatedIngredients[ingredientIndex] = originalIngredient.copy(name = newName)
 
-            // Create updated recipe
-            val updatedRecipe = recipeData.copy(ingredients = updatedIngredients)
+            // Check if the original ingredient name appears in the recipe name
+            // e.g., "Honey Garlic Salmon" should become "Honey Garlic Tilapia"
+            val originalNameWords = originalIngredient.name.split(" ").map { it.lowercase() }
+            val updatedRecipeName = if (originalNameWords.any { word ->
+                entity.recipeName.lowercase().contains(word) && word.length > 3
+            }) {
+                // Replace the ingredient name in the recipe title (case-insensitive)
+                var newRecipeName = entity.recipeName
+                for (word in originalNameWords) {
+                    if (word.length > 3) {  // Only replace meaningful words
+                        val regex = Regex("(?i)\\b${Regex.escape(word)}\\b")
+                        val newWord = newName.split(" ").firstOrNull { it.length > 3 } ?: newName
+                        newRecipeName = newRecipeName.replace(regex, newWord)
+                    }
+                }
+                newRecipeName
+            } else {
+                entity.recipeName
+            }
+
+            // Create updated recipe (also update name in JSON)
+            val updatedRecipe = recipeData.copy(
+                name = updatedRecipeName,
+                ingredients = updatedIngredients
+            )
 
             // Serialize and save
             val updatedJson = json.encodeToString(RecipeJson.serializer(), updatedRecipe)
-            mealPlanDao.updatePlannedRecipeJson(plannedRecipeId, updatedJson)
 
-            android.util.Log.d("MealPlanRepo",
-                "Updated ingredient $ingredientIndex in recipe ${entity.recipeName}: '${originalIngredient.name}' -> '$newName'"
-            )
+            if (updatedRecipeName != entity.recipeName) {
+                // Recipe name changed, update both fields
+                mealPlanDao.updatePlannedRecipe(plannedRecipeId, updatedRecipeName, updatedJson)
+                android.util.Log.d("MealPlanRepo",
+                    "Updated recipe '${entity.recipeName}' -> '$updatedRecipeName' and ingredient '${originalIngredient.name}' -> '$newName'"
+                )
+            } else {
+                // Only ingredient changed
+                mealPlanDao.updatePlannedRecipeJson(plannedRecipeId, updatedJson)
+                android.util.Log.d("MealPlanRepo",
+                    "Updated ingredient in recipe ${entity.recipeName}: '${originalIngredient.name}' -> '$newName'"
+                )
+            }
+
             Result.success(Unit)
         } catch (e: Exception) {
             android.util.Log.e("MealPlanRepo", "Failed to update recipe ingredient: ${e.message}", e)
