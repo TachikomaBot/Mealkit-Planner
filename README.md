@@ -84,9 +84,16 @@ app/src/main/java/com/mealplanner/
 Node.js/Express API providing:
 - Recipe search from 20K+ Food.com dataset
 - AI meal plan generation via Gemini (SSE streaming)
+- Shopping list polishing via Gemini
+- Pantry item categorization via Gemini (async job pattern)
 - Image caching (planned)
 
-See [backend/README.md](backend/README.md) for API documentation.
+**Key AI endpoints:**
+- `POST /api/meal-plan/generate-async` - AI meal plan generation
+- `POST /api/meal-plan/polish-grocery-list-async` - Grocery list cleanup
+- `POST /api/meal-plan/categorize-pantry-items-async` - AI pantry categorization
+
+See [backend/README.md](backend/README.md) for full API documentation.
 
 ---
 
@@ -162,19 +169,35 @@ When "Done Shopping" is pressed in the Grocery List:
 ```
 MealPlanScreen
     └─> MealPlanViewModel.markShoppingComplete()
+        └─> UI shows "Stocking your pantry..." loading screen
         └─> ManageShoppingListUseCase.completeShoppingTrip(mealPlanId)
             ├─> ShoppingRepository.getCheckedItems() - get all checked items
-            ├─> Map to PantryItems (with unit/category conversion)
-            ├─> PantryRepository.addFromShoppingList() - insert to pantry
-            └─> ShoppingRepository.resetAllItems() - uncheck all items
+            ├─> ShoppingRepository.categorizeForPantry() - AI categorization
+            │   ├─> POST /api/meal-plan/categorize-pantry-items-async
+            │   ├─> Poll job status until complete
+            │   └─> Returns CategorizedPantryItem[] with smart categories
+            ├─> (Fallback to local mapping if AI fails)
+            ├─> Map to PantryItems with AI-determined:
+            │   ├─> Category (PRODUCE, PROTEIN, DAIRY, etc.)
+            │   ├─> TrackingStyle (STOCK_LEVEL, COUNT, PRECISE)
+            │   └─> ExpiryDays (based on item type)
+            └─> PantryRepository.addFromShoppingList() - insert to pantry
         └─> MealPlanRepository.markShoppingComplete() - set flag
         └─> Show confirmation dialog with item count
 ```
 
+**AI Categorization (Gemini):**
+- Intelligently assigns pantry categories (e.g., "Salmon Fillets" → PROTEIN)
+- Determines tracking style (spices use STOCK_LEVEL, cans use COUNT)
+- Estimates expiry days based on item perishability
+- Falls back to local heuristics if AI unavailable
+
 **Key files:**
 - `ManageShoppingListUseCase.kt` - orchestrates the pantry sync logic
+- `ShoppingRepositoryImpl.kt` - implements AI categorization with job polling
 - `MealPlanViewModel.kt` - calls use case, manages completion state
-- `MealPlanScreen.kt` - shows completion dialog
+- `MealPlanScreen.kt` - shows loading screen and completion dialog
+- `backend/src/services/geminiService.ts` - `categorizePantryItems()` function
 
 ### Cooking → Pantry Deduction
 
@@ -214,13 +237,15 @@ See [NATIVE_KOTLIN_PROGRESS.md](NATIVE_KOTLIN_PROGRESS.md) for detailed progress
 - Backend with recipe search and AI generation
 - Foreground service for background generation
 - Room database with full schema
-- Shopping → Pantry flow
+- Shopping → Pantry flow with AI-powered categorization
 - Recipe rating and history
+- Test Mode for data isolation during development
 
 **In Progress (see Todo.md):**
 - Pantry sync improvements (confirmation screens before add/deduct)
 - Ingredient substitution
 - Recipe units refinement
+- Cooking → Pantry deduction flow
 
 ---
 

@@ -9,16 +9,25 @@
   - Substeps use **bold** markdown for ingredients, times, temperatures
   - Visual cues paired with cooking times ("until golden", "until fragrant")
   - Workflow optimization with "Meanwhile" for parallel tasks
+- [x] AI-powered pantry categorization (Gemini) - **COMPLETE**
+  - Shopping items are categorized intelligently when completing shopping trip
+  - Correct category assignment (e.g., "Salmon Fillets" → PROTEIN, not OTHER)
+  - Smart tracking style selection (STOCK_LEVEL for spices/oils, PRECISE for produce)
+  - Intelligent expiry estimation based on item type (herbs: 4 days, fish: 3 days, etc.)
+  - Fallback to local categorization if AI fails
+  - Loading screen with progress indicator during pantry stocking
+  - Grocery list becomes read-only after shopping completion
 
 ---
 
 ## High Priority
 
 ### Pantry Sync with Shopping & Cooking
-- [ ] Auto-add ingredients to pantry after completing grocery shopping
-  - Find/restore the "mark shopping completed" button (user can't see it now)
-  - Show confirmation screen before adding items
-  - Allow user to edit quantities on confirmation screen
+- [x] Auto-add ingredients to pantry after completing grocery shopping
+  - ~~Find/restore the "mark shopping completed" button~~ ✓ Working
+  - AI-powered categorization via Gemini ✓
+  - [ ] Show confirmation screen before adding items
+  - [ ] Allow user to edit quantities on confirmation screen
 - [ ] Auto-deduct ingredients from pantry after making a recipe
   - Show confirmation screen before deducting
   - Allow user to edit deductions to match actual usage
