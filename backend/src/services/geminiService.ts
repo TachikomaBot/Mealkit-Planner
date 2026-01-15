@@ -1017,7 +1017,16 @@ function selectDefaultSix(meals: ComposedMeal[]): number[] {
 // Grocery List Polishing
 // ============================================================================
 
-import type { GroceryIngredient, GroceryPolishResponse, PolishedGroceryItem, GroceryPolishProgress } from '../types.js';
+import type {
+  GroceryIngredient,
+  GroceryPolishResponse,
+  PolishedGroceryItem,
+  GroceryPolishProgress,
+  ShoppingItemForPantry,
+  CategorizedPantryItem,
+  PantryCategorizeProgress,
+  PantryCategorizeResponse,
+} from '../types.js';
 
 const POLISH_BATCH_SIZE = 8; // Smaller batches to avoid truncation issues with gemini-3-flash-preview
 
@@ -1292,4 +1301,333 @@ Respond with JSON:
   }
 
   return items; // Fallback to unmerged list
+}
+
+// ============================================================================
+// Pantry Categorization
+// ============================================================================
+
+/**
+ * Categorize shopping items for pantry using Gemini AI.
+ * Uses function calling to have Gemini invoke add_pantry_item for each item.
+ */
+export async function categorizePantryItems(
+  apiKey: string,
+  items: ShoppingItemForPantry[],
+  onProgress?: (progress: PantryCategorizeProgress) => void
+): Promise<PantryCategorizeResponse> {
+  const startTime = Date.now();
+  console.log(`[PantryCategorize] Starting categorization for ${items.length} items`);
+
+  onProgress?.({
+    phase: 'categorizing',
+    current: 0,
+    total: items.length,
+    message: 'Analyzing items...'
+  });
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  const systemPrompt = `You are a pantry organization assistant. Your job is to categorize shopping items for storage in a home pantry.
+
+For each item provided, analyze it and call the add_pantry_item function with the appropriate categorization.
+
+CATEGORY MAPPING (choose the most appropriate):
+- PRODUCE: Fresh fruits, vegetables, leafy greens, fresh herbs
+- PROTEIN: Meat, poultry, fish, seafood, tofu, tempeh, eggs
+- DAIRY: Milk, cheese, yogurt, butter, cream
+- DRY_GOODS: Pasta, rice, flour, dried beans, canned goods, cereals, bread
+- SPICE: Dried herbs, spices, seasonings, spice blends
+- OILS: Cooking oils, olive oil, vegetable oil, sesame oil, vinegar
+- CONDIMENT: Sauces, ketchup, mustard, soy sauce, hot sauce, salad dressings
+- FROZEN: Frozen vegetables, frozen meals, ice cream
+- OTHER: Items that don't fit other categories
+
+TRACKING STYLE (determines how quantity is tracked):
+- STOCK_LEVEL: For items where precise quantity doesn't matter - spices, oils, condiments, flour, sugar, rice
+  stockLevel should be: "FULL" for new purchases
+- COUNT: For countable items - cans, jars, bottles, boxes, packages
+- PRECISE: For items where exact quantity matters - fresh produce, proteins, dairy
+  stockLevel should be null for COUNT and PRECISE
+
+UNIT MAPPING:
+- GRAMS: For items measured by weight (produce, proteins, cheese)
+- MILLILITERS: For liquids (milk, oil, sauces)
+- UNITS: For whole items (eggs, apples, onions)
+- PIECES: For protein portions (chicken breasts, salmon fillets)
+- BUNCH: For bundled produce (cilantro, parsley, green onions)
+
+EXPIRY DAYS (from purchase date, null if shelf-stable):
+- Leafy greens, fresh herbs: 3-5 days
+- Fresh berries: 3-5 days
+- Other fresh produce: 7-10 days
+- Fresh fish/seafood: 2-3 days
+- Fresh poultry: 3-4 days
+- Fresh red meat: 4-5 days
+- Fresh dairy (milk, yogurt): 7-10 days
+- Hard cheese: 21-30 days
+- Eggs: 21-28 days
+- Bread: 5-7 days
+- Dry goods, canned, spices, oils, condiments: null (shelf-stable)
+
+QUANTITY PARSING:
+Parse the displayQuantity string to extract numeric quantity:
+- "500g" → quantity: 500, unit: GRAMS
+- "2 pieces" → quantity: 2, unit: PIECES
+- "1 bunch" → quantity: 1, unit: BUNCH
+- "450g (2 fillets)" → quantity: 450, unit: GRAMS
+- "1L" or "1000ml" → quantity: 1000, unit: MILLILITERS
+
+Call add_pantry_item for EACH item in the list. Do not skip any items.`;
+
+  const toolDeclaration: FunctionDeclaration = {
+    name: 'add_pantry_item',
+    description: 'Add a categorized item to the pantry. Call once for each shopping item.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        id: { type: Type.NUMBER, description: 'Original shopping item ID (from input)' },
+        name: { type: Type.STRING, description: 'Clean item name for pantry display' },
+        quantity: { type: Type.NUMBER, description: 'Parsed numeric quantity' },
+        unit: {
+          type: Type.STRING,
+          description: 'Unit of measurement',
+          // @ts-expect-error - enum is valid per Gemini API
+          enum: ['GRAMS', 'MILLILITERS', 'UNITS', 'PIECES', 'BUNCH']
+        },
+        category: {
+          type: Type.STRING,
+          description: 'Pantry category',
+          // @ts-expect-error - enum is valid per Gemini API
+          enum: ['PRODUCE', 'PROTEIN', 'DAIRY', 'DRY_GOODS', 'SPICE', 'OILS', 'CONDIMENT', 'FROZEN', 'OTHER']
+        },
+        trackingStyle: {
+          type: Type.STRING,
+          description: 'How to track quantity',
+          // @ts-expect-error - enum is valid per Gemini API
+          enum: ['STOCK_LEVEL', 'COUNT', 'PRECISE']
+        },
+        stockLevel: {
+          type: Type.STRING,
+          description: 'Stock level (only for STOCK_LEVEL tracking style)',
+          nullable: true,
+          // @ts-expect-error - enum is valid per Gemini API
+          enum: ['FULL', 'HIGH', 'MEDIUM', 'LOW']
+        },
+        expiryDays: {
+          type: Type.NUMBER,
+          description: 'Days until expiry from purchase (null for shelf-stable)',
+          nullable: true
+        },
+        perishable: { type: Type.BOOLEAN, description: 'Whether item is perishable' }
+      },
+      required: ['id', 'name', 'quantity', 'unit', 'category', 'trackingStyle', 'perishable']
+    }
+  };
+
+  const userPrompt = `Categorize these ${items.length} shopping items for pantry storage.
+
+ITEMS TO CATEGORIZE:
+${items.map(item => `- ID: ${item.id}, Name: "${item.name}", Quantity: "${item.polishedDisplayQuantity}", Shopping Category: "${item.shoppingCategory}"`).join('\n')}
+
+Call add_pantry_item for EACH item above. Do not skip any items.`;
+
+  try {
+    const categorizedItems: CategorizedPantryItem[] = [];
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const contents: any[] = [
+      { role: 'user', parts: [{ text: userPrompt }] }
+    ];
+
+    const maxIterations = Math.max(5, Math.ceil(items.length / 3) + 2);
+
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        config: {
+          systemInstruction: systemPrompt,
+          tools: [{ functionDeclarations: [toolDeclaration] }],
+          temperature: 0.1,
+        },
+        contents
+      });
+
+      const candidate = response.candidates?.[0];
+      if (!candidate?.content?.parts) {
+        throw new Error('No response from Gemini');
+      }
+
+      const parts = candidate.content.parts;
+      const functionCalls = parts.filter(p => p.functionCall);
+
+      console.log(`[PantryCategorize] Iteration ${iteration + 1}: ${functionCalls.length} function calls`);
+
+      if (functionCalls.length === 0) {
+        // No more function calls - model is done
+        break;
+      }
+
+      // Process function calls
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const functionResponses: any[] = [];
+
+      for (const part of functionCalls) {
+        if (part.functionCall?.name === 'add_pantry_item') {
+          const args = part.functionCall.args as unknown as CategorizedPantryItem;
+
+          // Validate and add to results
+          const categorizedItem: CategorizedPantryItem = {
+            id: Number(args.id),
+            name: String(args.name || ''),
+            quantity: Number(args.quantity) || 1,
+            unit: String(args.unit || 'UNITS'),
+            category: String(args.category || 'OTHER'),
+            trackingStyle: String(args.trackingStyle || 'PRECISE'),
+            stockLevel: args.trackingStyle === 'STOCK_LEVEL' ? (args.stockLevel || 'FULL') : null,
+            expiryDays: args.expiryDays != null ? Number(args.expiryDays) : null,
+            perishable: Boolean(args.perishable)
+          };
+
+          categorizedItems.push(categorizedItem);
+          console.log(`[PantryCategorize] Added: ${categorizedItem.name} → ${categorizedItem.category} (${categorizedItem.trackingStyle})`);
+
+          functionResponses.push({
+            functionResponse: {
+              name: 'add_pantry_item',
+              response: { success: true, id: categorizedItem.id }
+            }
+          });
+        }
+      }
+
+      // Update progress
+      onProgress?.({
+        phase: 'categorizing',
+        current: categorizedItems.length,
+        total: items.length,
+        message: `Categorized ${categorizedItems.length}/${items.length} items`
+      });
+
+      // Add responses to conversation for next iteration
+      contents.push({ role: 'model', parts });
+      contents.push({ role: 'user', parts: functionResponses });
+
+      // Check if we've processed all items
+      if (categorizedItems.length >= items.length) {
+        break;
+      }
+    }
+
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[PantryCategorize] Completed: ${categorizedItems.length}/${items.length} items in ${elapsed}s`);
+
+    // Check for missing items and add fallbacks
+    const processedIds = new Set(categorizedItems.map(i => i.id));
+    for (const item of items) {
+      if (!processedIds.has(item.id)) {
+        console.warn(`[PantryCategorize] Item ${item.id} (${item.name}) not processed, adding fallback`);
+        categorizedItems.push(createFallbackItem(item));
+      }
+    }
+
+    onProgress?.({
+      phase: 'complete',
+      current: categorizedItems.length,
+      total: items.length,
+      message: 'Categorization complete'
+    });
+
+    return { items: categorizedItems };
+  } catch (error) {
+    console.error('[PantryCategorize] Error:', error);
+
+    // Return fallback categorization for all items
+    const fallbackItems = items.map(createFallbackItem);
+    return { items: fallbackItems };
+  }
+}
+
+/**
+ * Create a fallback categorization for an item when AI fails
+ */
+function createFallbackItem(item: ShoppingItemForPantry): CategorizedPantryItem {
+  // Parse quantity from display string
+  const { quantity, unit } = parseQuantityFromDisplay(item.polishedDisplayQuantity);
+
+  // Map shopping category to pantry category
+  const category = mapShoppingCategory(item.shoppingCategory);
+
+  // Determine tracking style and perishability
+  const isPerishable = ['PRODUCE', 'PROTEIN', 'DAIRY'].includes(category);
+  const trackingStyle = ['SPICE', 'OILS', 'CONDIMENT'].includes(category) ? 'STOCK_LEVEL' : 'PRECISE';
+
+  return {
+    id: item.id,
+    name: item.name,
+    quantity,
+    unit,
+    category,
+    trackingStyle,
+    stockLevel: trackingStyle === 'STOCK_LEVEL' ? 'FULL' : null,
+    expiryDays: isPerishable ? 7 : null,
+    perishable: isPerishable
+  };
+}
+
+/**
+ * Parse quantity and unit from display string
+ */
+function parseQuantityFromDisplay(display: string): { quantity: number; unit: string } {
+  if (!display) return { quantity: 1, unit: 'UNITS' };
+
+  const trimmed = display.trim();
+
+  // Pattern: "500g" or "250ml"
+  const weightMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*(g|kg|ml|l|L)$/i);
+  if (weightMatch) {
+    let qty = parseFloat(weightMatch[1]);
+    const unitStr = weightMatch[2].toLowerCase();
+    if (unitStr === 'kg') { qty *= 1000; return { quantity: qty, unit: 'GRAMS' }; }
+    if (unitStr === 'l') { qty *= 1000; return { quantity: qty, unit: 'MILLILITERS' }; }
+    if (unitStr === 'g') return { quantity: qty, unit: 'GRAMS' };
+    if (unitStr === 'ml') return { quantity: qty, unit: 'MILLILITERS' };
+  }
+
+  // Pattern: "2 pieces", "3 medium"
+  const countMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s+(.+)$/);
+  if (countMatch) {
+    const qty = parseFloat(countMatch[1]);
+    const unitPart = countMatch[2].toLowerCase();
+    if (unitPart.includes('bunch')) return { quantity: qty, unit: 'BUNCH' };
+    if (unitPart.includes('piece') || unitPart.includes('fillet')) return { quantity: qty, unit: 'PIECES' };
+    return { quantity: qty, unit: 'UNITS' };
+  }
+
+  // Pattern: Just a number
+  const numMatch = trimmed.match(/^(\d+(?:\.\d+)?)$/);
+  if (numMatch) {
+    return { quantity: parseFloat(numMatch[1]), unit: 'UNITS' };
+  }
+
+  return { quantity: 1, unit: 'UNITS' };
+}
+
+/**
+ * Map shopping category to pantry category
+ */
+function mapShoppingCategory(shoppingCategory: string): string {
+  const cat = (shoppingCategory || '').toLowerCase();
+
+  if (cat.includes('produce') || cat.includes('vegetable') || cat.includes('fruit')) return 'PRODUCE';
+  if (cat.includes('protein') || cat.includes('meat') || cat.includes('seafood') || cat.includes('fish')) return 'PROTEIN';
+  if (cat.includes('dairy') || cat.includes('milk') || cat.includes('cheese')) return 'DAIRY';
+  if (cat.includes('pantry') || cat.includes('dry') || cat.includes('grain') || cat.includes('pasta')) return 'DRY_GOODS';
+  if (cat.includes('spice') || cat.includes('herb') || cat.includes('seasoning')) return 'SPICE';
+  if (cat.includes('oil') || cat.includes('vinegar')) return 'OILS';
+  if (cat.includes('condiment') || cat.includes('sauce')) return 'CONDIMENT';
+  if (cat.includes('frozen')) return 'FROZEN';
+  if (cat.includes('bakery') || cat.includes('bread')) return 'DRY_GOODS';
+
+  return 'OTHER';
 }

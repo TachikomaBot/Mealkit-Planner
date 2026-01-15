@@ -157,3 +157,48 @@ export interface GroceryPolishProgress {
   totalBatches: number;
   message?: string;
 }
+
+// Pantry categorization types
+export interface ShoppingItemForPantry {
+  id: number;
+  name: string;
+  polishedDisplayQuantity: string;  // "4 pieces", "500g"
+  shoppingCategory: string;
+}
+
+export interface CategorizedPantryItem {
+  id: number;
+  name: string;
+  quantity: number;
+  unit: string;       // GRAMS, MILLILITERS, UNITS, BUNCH, PIECES
+  category: string;   // PRODUCE, PROTEIN, DAIRY, DRY_GOODS, SPICE, OILS, CONDIMENT, FROZEN, OTHER
+  trackingStyle: string;  // STOCK_LEVEL, COUNT, PRECISE
+  stockLevel: string | null;  // FULL, HIGH, MEDIUM, LOW (for STOCK_LEVEL tracking)
+  expiryDays: number | null;
+  perishable: boolean;
+}
+
+export interface PantryCategorizeRequest {
+  items: ShoppingItemForPantry[];
+}
+
+export interface PantryCategorizeResponse {
+  items: CategorizedPantryItem[];
+}
+
+export interface PantryCategorizeJob {
+  id: string;
+  status: JobStatus;
+  progress: PantryCategorizeProgress | null;
+  result: PantryCategorizeResponse | null;
+  error: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface PantryCategorizeProgress {
+  phase: 'categorizing' | 'complete';
+  current: number;
+  total: number;
+  message?: string;
+}

@@ -75,6 +75,34 @@ fun MealPlanScreen(
     val browseState by viewModel.browseState.collectAsState()
     val categories by viewModel.categories.collectAsState()
     val shoppingList by viewModel.shoppingList.collectAsState()
+    val shoppingCompletionState by viewModel.shoppingCompletionState.collectAsState()
+
+    // Shopping completion dialog
+    shoppingCompletionState?.let { completion ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissShoppingCompletion() },
+            icon = {
+                Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(48.dp)
+                )
+            },
+            title = { Text("Shopping Complete!") },
+            text = {
+                Text(
+                    "${completion.itemsAddedToPantry} items have been added to your pantry.",
+                    textAlign = TextAlign.Center
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.dismissShoppingCompletion() }) {
+                    Text("Done")
+                }
+            }
+        )
+    }
 
     // ActivePlan state has its own Scaffold with dynamic TopAppBar
     if (uiState is MealPlanUiState.ActivePlan) {
@@ -945,7 +973,31 @@ private fun EmbeddedGroceryList(
                             color = onSubheaderColor.copy(alpha = 0.7f)
                         )
                     }
-                    if (!shoppingComplete && shoppingList.checkedItems > 0) {
+                    if (shoppingComplete) {
+                        // Shopping complete badge
+                        Surface(
+                            color = Color.White,
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = subheaderColor
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Complete",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = subheaderColor
+                                )
+                            }
+                        }
+                    } else if (shoppingList.checkedItems > 0) {
                         Button(
                             onClick = onMarkShoppingComplete,
                             colors = ButtonDefaults.buttonColors(
@@ -993,6 +1045,7 @@ private fun EmbeddedGroceryList(
                 ) { item ->
                     EmbeddedShoppingItem(
                         item = item,
+                        enabled = !shoppingComplete,
                         onCheckedChange = { onItemCheckedChange(item.id) }
                     )
                 }
@@ -1034,6 +1087,7 @@ private fun EmbeddedCategoryHeader(
 @Composable
 private fun EmbeddedShoppingItem(
     item: ShoppingItem,
+    enabled: Boolean = true,
     onCheckedChange: () -> Unit
 ) {
     Card(
@@ -1051,7 +1105,8 @@ private fun EmbeddedShoppingItem(
         ) {
             Checkbox(
                 checked = item.checked,
-                onCheckedChange = { onCheckedChange() }
+                onCheckedChange = if (enabled) { { onCheckedChange() } } else null,
+                enabled = enabled
             )
 
             Text(

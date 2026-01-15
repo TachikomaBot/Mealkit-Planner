@@ -15,6 +15,7 @@ import com.mealplanner.domain.repository.RecipeRepository
 import com.mealplanner.domain.repository.ShoppingRepository
 import com.mealplanner.domain.usecase.GenerateMealPlanUseCase
 import com.mealplanner.domain.usecase.ManagePreferencesUseCase
+import com.mealplanner.domain.usecase.ManageShoppingListUseCase
 import com.mealplanner.service.GenerationState
 import com.mealplanner.service.MealGenerationService
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -30,6 +31,7 @@ class MealPlanViewModel @Inject constructor(
     private val mealPlanRepository: MealPlanRepository,
     private val recipeRepository: RecipeRepository,
     private val shoppingRepository: ShoppingRepository,
+    private val manageShoppingListUseCase: ManageShoppingListUseCase,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -48,6 +50,9 @@ class MealPlanViewModel @Inject constructor(
 
     private val _shoppingList = MutableStateFlow<ShoppingList?>(null)
     val shoppingList: StateFlow<ShoppingList?> = _shoppingList.asStateFlow()
+
+    private val _shoppingCompletionState = MutableStateFlow<ShoppingCompletionState?>(null)
+    val shoppingCompletionState: StateFlow<ShoppingCompletionState?> = _shoppingCompletionState.asStateFlow()
 
     init {
         observeCurrentPlan()
@@ -366,11 +371,23 @@ class MealPlanViewModel @Inject constructor(
         viewModelScope.launch {
             val current = _uiState.value
             if (current is MealPlanUiState.ActivePlan) {
+                // Move checked items to pantry
+                val itemsAdded = manageShoppingListUseCase.completeShoppingTrip(current.mealPlan.id)
+
+                // Mark shopping as complete in the meal plan
                 mealPlanRepository.markShoppingComplete(current.mealPlan.id)
-                // State will update via observer, but also update view mode to show meals
+
+                // Show completion dialog
+                _shoppingCompletionState.value = ShoppingCompletionState(itemsAddedToPantry = itemsAdded)
+
+                // Update view mode to show meals
                 _uiState.value = current.copy(viewMode = ViewMode.PRIMARY)
             }
         }
+    }
+
+    fun dismissShoppingCompletion() {
+        _shoppingCompletionState.value = null
     }
 
     fun toggleItemChecked(itemId: Long) {
@@ -405,4 +422,8 @@ data class BrowseState(
     val recipes: List<RecipeSearchResult> = emptyList(),
     val selectedRecipes: Set<RecipeSearchResult> = emptySet(),
     val isLoading: Boolean = false
+)
+
+data class ShoppingCompletionState(
+    val itemsAddedToPantry: Int
 )

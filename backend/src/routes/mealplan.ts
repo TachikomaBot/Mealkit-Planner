@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { loadRecipes } from '../services/recipeService.js';
-import { generateMealPlan, polishGroceryList } from '../services/geminiService.js';
+import { generateMealPlan, polishGroceryList, categorizePantryItems } from '../services/geminiService.js';
 import {
   createJob,
   getJob,
@@ -16,8 +16,15 @@ import {
   completeGroceryPolishJob,
   failGroceryPolishJob,
   deleteGroceryPolishJob,
+  createPantryCategorizeJob,
+  getPantryCategorizeJob,
+  startPantryCategorizeJob,
+  updatePantryCategorizeProgress,
+  completePantryCategorizeJob,
+  failPantryCategorizeJob,
+  deletePantryCategorizeJob,
 } from '../services/jobService.js';
-import type { MealPlanRequest, ProgressEvent, GroceryPolishRequest, GroceryPolishProgress } from '../types.js';
+import type { MealPlanRequest, ProgressEvent, GroceryPolishRequest, GroceryPolishProgress, PantryCategorizeRequest, PantryCategorizeProgress } from '../types.js';
 
 const router = Router();
 
@@ -402,6 +409,112 @@ router.get('/grocery-polish-jobs/:id', (req, res) => {
  */
 router.delete('/grocery-polish-jobs/:id', (req, res) => {
   const deleted = deleteGroceryPolishJob(req.params.id);
+
+  if (!deleted) {
+    return res.status(404).json({ error: 'Job not found' });
+  }
+
+  res.json({ success: true });
+});
+
+// ============================================================================
+// Pantry Categorization Endpoints
+// ============================================================================
+
+/**
+ * POST /api/meal-plan/categorize-pantry-items-async
+ * Start an async pantry categorization job
+ * Uses Gemini AI to intelligently categorize shopping items for pantry storage
+ *
+ * Body:
+ * {
+ *   items: [{ id, name, polishedDisplayQuantity, shoppingCategory }]
+ * }
+ *
+ * Headers:
+ *   X-Gemini-Key: Your Gemini API key
+ *
+ * Returns: { jobId: string }
+ */
+router.post('/categorize-pantry-items-async', async (req, res) => {
+  const apiKey = (req.headers['x-gemini-key'] as string) || process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    return res.status(401).json({ error: 'Gemini API key required in X-Gemini-Key header or GEMINI_API_KEY env var' });
+  }
+
+  const request = req.body as PantryCategorizeRequest;
+
+  if (!request.items || !Array.isArray(request.items)) {
+    return res.status(400).json({ error: 'items array is required' });
+  }
+
+  if (request.items.length === 0) {
+    return res.status(400).json({ error: 'items array cannot be empty' });
+  }
+
+  // Create job and return immediately
+  const job = createPantryCategorizeJob();
+  console.log(`[PantryCategorizeAsync] Created job ${job.id} for ${request.items.length} items`);
+
+  // Start categorization in background
+  setImmediate(async () => {
+    startPantryCategorizeJob(job.id);
+    console.log(`[PantryCategorizeAsync] Starting job ${job.id}`);
+
+    const onProgress = (progress: PantryCategorizeProgress) => {
+      console.log(`[PantryCategorizeAsync] Job ${job.id} progress: ${progress.current}/${progress.total}`);
+      updatePantryCategorizeProgress(job.id, progress);
+    };
+
+    try {
+      const result = await categorizePantryItems(apiKey, request.items, onProgress);
+      console.log(`[PantryCategorizeAsync] Job ${job.id} completed with ${result.items.length} items`);
+      completePantryCategorizeJob(job.id, result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`[PantryCategorizeAsync] Job ${job.id} failed: ${message}`);
+      failPantryCategorizeJob(job.id, message);
+    }
+  });
+
+  // Return job ID immediately
+  res.json({ jobId: job.id });
+});
+
+/**
+ * GET /api/meal-plan/pantry-categorize-jobs/:id
+ * Get the status of a pantry categorization job
+ *
+ * Returns:
+ * - status: 'pending' | 'running' | 'completed' | 'failed'
+ * - progress: { phase, current, total, message } (if running)
+ * - result: PantryCategorizeResponse (if completed)
+ * - error: string (if failed)
+ */
+router.get('/pantry-categorize-jobs/:id', (req, res) => {
+  const job = getPantryCategorizeJob(req.params.id);
+
+  if (!job) {
+    return res.status(404).json({ error: 'Job not found or expired' });
+  }
+
+  // Return job status without dates
+  res.json({
+    id: job.id,
+    status: job.status,
+    progress: job.progress,
+    result: job.result,
+    error: job.error,
+  });
+});
+
+/**
+ * DELETE /api/meal-plan/pantry-categorize-jobs/:id
+ * Delete a pantry categorization job after retrieving the result
+ */
+router.delete('/pantry-categorize-jobs/:id', (req, res) => {
+  const deleted = deletePantryCategorizeJob(req.params.id);
 
   if (!deleted) {
     return res.status(404).json({ error: 'Job not found' });

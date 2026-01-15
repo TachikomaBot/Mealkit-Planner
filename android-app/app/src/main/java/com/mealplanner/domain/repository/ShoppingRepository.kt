@@ -1,5 +1,6 @@
 package com.mealplanner.domain.repository
 
+import com.mealplanner.data.remote.dto.CategorizedPantryItemDto
 import com.mealplanner.domain.model.ShoppingItem
 import com.mealplanner.domain.model.ShoppingList
 import kotlinx.coroutines.flow.Flow
@@ -80,4 +81,10 @@ interface ShoppingRepository {
      * Clear all shopping list data
      */
     suspend fun clearAll()
+
+    /**
+     * Use AI to categorize checked shopping items for pantry storage.
+     * Returns categorized items with proper pantry categories, tracking styles, and expiry dates.
+     */
+    suspend fun categorizeForPantry(items: List<ShoppingItem>): Result<List<CategorizedPantryItemDto>>
 }

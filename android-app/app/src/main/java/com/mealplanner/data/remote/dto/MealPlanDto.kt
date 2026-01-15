@@ -140,3 +140,52 @@ data class GroceryPolishProgressDto(
     val totalBatches: Int,
     val message: String? = null
 )
+
+// Pantry categorization DTOs
+@Serializable
+data class PantryCategorizeRequest(
+    val items: List<ShoppingItemForPantryDto>
+)
+
+@Serializable
+data class ShoppingItemForPantryDto(
+    val id: Long,
+    val name: String,
+    val polishedDisplayQuantity: String,
+    val shoppingCategory: String
+)
+
+@Serializable
+data class PantryCategorizeResponse(
+    val items: List<CategorizedPantryItemDto>
+)
+
+@Serializable
+data class CategorizedPantryItemDto(
+    val id: Long,
+    val name: String,
+    val quantity: Double,
+    val unit: String,        // GRAMS, MILLILITERS, UNITS, PIECES, BUNCH
+    val category: String,    // PRODUCE, PROTEIN, DAIRY, DRY_GOODS, SPICE, OILS, CONDIMENT, FROZEN, OTHER
+    val trackingStyle: String,  // STOCK_LEVEL, COUNT, PRECISE
+    val stockLevel: String? = null,  // FULL, HIGH, MEDIUM, LOW (for STOCK_LEVEL tracking)
+    val expiryDays: Int? = null,
+    val perishable: Boolean
+)
+
+@Serializable
+data class PantryCategorizeJobResponse(
+    val id: String,
+    val status: String,  // "pending", "running", "completed", "failed"
+    val progress: PantryCategorizeProgressDto? = null,
+    val result: PantryCategorizeResponse? = null,
+    val error: String? = null
+)
+
+@Serializable
+data class PantryCategorizeProgressDto(
+    val phase: String,
+    val current: Int,
+    val total: Int,
+    val message: String? = null
+)

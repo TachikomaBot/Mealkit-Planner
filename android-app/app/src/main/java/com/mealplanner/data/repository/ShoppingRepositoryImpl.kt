@@ -4,10 +4,13 @@ import com.mealplanner.data.local.dao.MealPlanDao
 import com.mealplanner.data.local.dao.ShoppingDao
 import com.mealplanner.data.local.entity.ShoppingItemEntity
 import com.mealplanner.data.remote.api.MealPlanApi
+import com.mealplanner.data.remote.dto.CategorizedPantryItemDto
 import com.mealplanner.data.remote.dto.GroceryIngredientDto
 import com.mealplanner.data.remote.dto.GroceryPolishRequest
 import com.mealplanner.data.remote.dto.GroceryPolishResponse
+import com.mealplanner.data.remote.dto.PantryCategorizeRequest
 import com.mealplanner.data.remote.dto.PantryItemDto
+import com.mealplanner.data.remote.dto.ShoppingItemForPantryDto
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import com.mealplanner.domain.model.PantryItem
@@ -382,4 +385,71 @@ class ShoppingRepositoryImpl @Inject constructor(
     override suspend fun clearAll() = withContext(Dispatchers.IO) {
         shoppingDao.deleteAll()
     }
+
+    override suspend fun categorizeForPantry(items: List<ShoppingItem>): Result<List<CategorizedPantryItemDto>> =
+        withContext(Dispatchers.IO) {
+            try {
+                android.util.Log.d("ShoppingRepo", "Categorizing ${items.size} items for pantry")
+
+                if (items.isEmpty()) {
+                    return@withContext Result.success(emptyList())
+                }
+
+                // Convert shopping items to request format
+                val request = PantryCategorizeRequest(
+                    items = items.map { item ->
+                        ShoppingItemForPantryDto(
+                            id = item.id,
+                            name = item.name,
+                            polishedDisplayQuantity = item.polishedDisplayQuantity ?: "${item.quantity} ${item.unit}".trim(),
+                            shoppingCategory = item.category
+                        )
+                    }
+                )
+
+                // Start async categorization job
+                android.util.Log.d("ShoppingRepo", "Starting async pantry categorize job...")
+                val startResponse = mealPlanApi.startPantryCategorize(request)
+                val jobId = startResponse.jobId
+                android.util.Log.d("ShoppingRepo", "Pantry categorize job started: $jobId")
+
+                // Poll for completion (with 60 second timeout)
+                var result: List<CategorizedPantryItemDto>? = null
+                var pollCount = 0
+                val maxPolls = 60  // 60 seconds timeout
+                while (result == null && pollCount < maxPolls) {
+                    kotlinx.coroutines.delay(1000)  // Poll every second
+                    pollCount++
+
+                    val status = mealPlanApi.getPantryCategorizeJobStatus(jobId)
+                    android.util.Log.d("ShoppingRepo", "Poll $pollCount: status=${status.status}")
+                    when (status.status) {
+                        "completed" -> {
+                            result = status.result?.items
+                                ?: return@withContext Result.failure(Exception("Job completed but no result"))
+                            // Clean up the job
+                            try { mealPlanApi.deletePantryCategorizeJob(jobId) } catch (_: Exception) {}
+                        }
+                        "failed" -> {
+                            android.util.Log.e("ShoppingRepo", "Categorize job failed: ${status.error}")
+                            try { mealPlanApi.deletePantryCategorizeJob(jobId) } catch (_: Exception) {}
+                            return@withContext Result.failure(Exception(status.error ?: "Categorize job failed"))
+                        }
+                        // "pending", "running" - continue polling
+                    }
+                }
+
+                if (result == null) {
+                    android.util.Log.e("ShoppingRepo", "Categorize job timed out after ${maxPolls}s")
+                    try { mealPlanApi.deletePantryCategorizeJob(jobId) } catch (_: Exception) {}
+                    return@withContext Result.failure(Exception("Categorization timed out"))
+                }
+
+                android.util.Log.d("ShoppingRepo", "Categorization complete: ${result.size} items")
+                Result.success(result)
+            } catch (e: Exception) {
+                android.util.Log.e("ShoppingRepo", "Categorization failed: ${e.message}", e)
+                Result.failure(e)
+            }
+        }
 }

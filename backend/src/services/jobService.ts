@@ -5,12 +5,16 @@ import type {
   MealPlanResponse,
   GroceryPolishJob,
   GroceryPolishProgress,
-  GroceryPolishResponse
+  GroceryPolishResponse,
+  PantryCategorizeJob,
+  PantryCategorizeProgress,
+  PantryCategorizeResponse
 } from '../types.js';
 
 // In-memory job storage (jobs expire after 30 minutes)
 const jobs = new Map<string, MealPlanJob>();
 const groceryPolishJobs = new Map<string, GroceryPolishJob>();
+const pantryCategorizeJobs = new Map<string, PantryCategorizeJob>();
 const JOB_EXPIRY_MS = 30 * 60 * 1000; // 30 minutes
 
 // ============================================================================
@@ -111,6 +115,11 @@ function cleanupExpiredJobs(): void {
       groceryPolishJobs.delete(id);
     }
   }
+  for (const [id, job] of pantryCategorizeJobs.entries()) {
+    if (now - job.createdAt.getTime() > JOB_EXPIRY_MS) {
+      pantryCategorizeJobs.delete(id);
+    }
+  }
 }
 
 // ============================================================================
@@ -194,4 +203,87 @@ export function failGroceryPolishJob(id: string, error: string): void {
  */
 export function deleteGroceryPolishJob(id: string): boolean {
   return groceryPolishJobs.delete(id);
+}
+
+// ============================================================================
+// Pantry Categorize Jobs
+// ============================================================================
+
+/**
+ * Create a new pantry categorize job
+ */
+export function createPantryCategorizeJob(): PantryCategorizeJob {
+  const job: PantryCategorizeJob = {
+    id: randomUUID(),
+    status: 'pending',
+    progress: null,
+    result: null,
+    error: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  pantryCategorizeJobs.set(job.id, job);
+  cleanupExpiredJobs();
+  return job;
+}
+
+/**
+ * Get a pantry categorize job by ID
+ */
+export function getPantryCategorizeJob(id: string): PantryCategorizeJob | undefined {
+  return pantryCategorizeJobs.get(id);
+}
+
+/**
+ * Start a pantry categorize job
+ */
+export function startPantryCategorizeJob(id: string): void {
+  const job = pantryCategorizeJobs.get(id);
+  if (job) {
+    job.status = 'running';
+    job.updatedAt = new Date();
+  }
+}
+
+/**
+ * Update pantry categorize job progress
+ */
+export function updatePantryCategorizeProgress(id: string, progress: PantryCategorizeProgress): void {
+  const job = pantryCategorizeJobs.get(id);
+  if (job) {
+    job.progress = progress;
+    job.updatedAt = new Date();
+  }
+}
+
+/**
+ * Complete a pantry categorize job with result
+ */
+export function completePantryCategorizeJob(id: string, result: PantryCategorizeResponse): void {
+  const job = pantryCategorizeJobs.get(id);
+  if (job) {
+    job.status = 'completed';
+    job.result = result;
+    job.progress = { phase: 'complete', current: 1, total: 1 };
+    job.updatedAt = new Date();
+  }
+}
+
+/**
+ * Fail a pantry categorize job with error
+ */
+export function failPantryCategorizeJob(id: string, error: string): void {
+  const job = pantryCategorizeJobs.get(id);
+  if (job) {
+    job.status = 'failed';
+    job.error = error;
+    job.updatedAt = new Date();
+  }
+}
+
+/**
+ * Delete a pantry categorize job
+ */
+export function deletePantryCategorizeJob(id: string): boolean {
+  return pantryCategorizeJobs.delete(id);
 }

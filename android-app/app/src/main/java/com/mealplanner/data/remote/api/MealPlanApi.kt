@@ -6,11 +6,12 @@ import com.mealplanner.data.remote.dto.GroceryPolishResponse
 import com.mealplanner.data.remote.dto.JobStatusResponse
 import com.mealplanner.data.remote.dto.MealPlanRequest
 import com.mealplanner.data.remote.dto.MealPlanResponse
+import com.mealplanner.data.remote.dto.PantryCategorizeJobResponse
+import com.mealplanner.data.remote.dto.PantryCategorizeRequest
 import com.mealplanner.data.remote.dto.StartJobResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
-import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.Path
 
@@ -59,6 +60,22 @@ interface MealPlanApi {
 
     @DELETE("api/meal-plan/grocery-polish-jobs/{jobId}")
     suspend fun deleteGroceryPolishJob(
+        @Path("jobId") jobId: String
+    )
+
+    // Pantry categorization endpoints
+    @POST("api/meal-plan/categorize-pantry-items-async")
+    suspend fun startPantryCategorize(
+        @Body request: PantryCategorizeRequest
+    ): StartJobResponse
+
+    @GET("api/meal-plan/pantry-categorize-jobs/{jobId}")
+    suspend fun getPantryCategorizeJobStatus(
+        @Path("jobId") jobId: String
+    ): PantryCategorizeJobResponse
+
+    @DELETE("api/meal-plan/pantry-categorize-jobs/{jobId}")
+    suspend fun deletePantryCategorizeJob(
         @Path("jobId") jobId: String
     )
 }

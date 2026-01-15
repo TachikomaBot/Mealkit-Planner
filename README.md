@@ -149,7 +149,59 @@ Weeknights: COOK
 | `PantryScreen` | Inventory management with water-level quantity cards |
 | `RecipeDetailScreen` | Full recipe view, mark cooked, rate |
 | `ProfileScreen` | Preferences, history, stats (tabbed) |
-| `SettingsScreen` | API key config, preferences |
+| `SettingsScreen` | API key config, preferences, test mode |
+
+---
+
+## Key Data Flows
+
+### Shopping → Pantry Sync
+
+When "Done Shopping" is pressed in the Grocery List:
+
+```
+MealPlanScreen
+    └─> MealPlanViewModel.markShoppingComplete()
+        └─> ManageShoppingListUseCase.completeShoppingTrip(mealPlanId)
+            ├─> ShoppingRepository.getCheckedItems() - get all checked items
+            ├─> Map to PantryItems (with unit/category conversion)
+            ├─> PantryRepository.addFromShoppingList() - insert to pantry
+            └─> ShoppingRepository.resetAllItems() - uncheck all items
+        └─> MealPlanRepository.markShoppingComplete() - set flag
+        └─> Show confirmation dialog with item count
+```
+
+**Key files:**
+- `ManageShoppingListUseCase.kt` - orchestrates the pantry sync logic
+- `MealPlanViewModel.kt` - calls use case, manages completion state
+- `MealPlanScreen.kt` - shows completion dialog
+
+### Cooking → Pantry Deduction
+
+When a recipe is marked as "Cooked":
+
+```
+RecipeDetailScreen
+    └─> RecipeDetailViewModel.markCooked()
+        └─> For each ingredient:
+            └─> PantryRepository.deductByName(name, amount)
+        └─> MealPlanRepository.markRecipeCooked()
+        └─> RecipeHistoryRepository.recordCooking()
+```
+
+### Test Mode
+
+Test Mode provides data isolation for testing pantry sync:
+
+```
+SettingsScreen
+    └─> SettingsViewModel.enableTestMode()
+        └─> TestModeUseCase.enableTestMode()
+            ├─> clearAllData() - clears pantry, shopping, meal plans
+            └─> DataStore: test_mode_enabled = true
+
+MainScreen shows "TEST MODE" banner when enabled
+```
 
 ---
 
