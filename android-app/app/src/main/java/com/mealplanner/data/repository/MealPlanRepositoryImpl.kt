@@ -256,4 +256,45 @@ class MealPlanRepositoryImpl @Inject constructor(
         mealPlanDao.deleteAllPlannedRecipes()
         mealPlanDao.deleteAllHistory()
     }
+
+    override suspend fun updateRecipeIngredient(
+        plannedRecipeId: Long,
+        ingredientIndex: Int,
+        newName: String
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val entity = mealPlanDao.getPlannedRecipeById(plannedRecipeId)
+                ?: return@withContext Result.failure(Exception("Recipe not found"))
+
+            // Parse the recipe JSON
+            val recipeData = json.decodeFromString(RecipeJson.serializer(), entity.recipeJson)
+
+            // Check if the ingredient index is valid
+            if (ingredientIndex !in recipeData.ingredients.indices) {
+                return@withContext Result.failure(
+                    Exception("Invalid ingredient index: $ingredientIndex (recipe has ${recipeData.ingredients.size} ingredients)")
+                )
+            }
+
+            // Create updated ingredients list with the new name
+            val updatedIngredients = recipeData.ingredients.toMutableList()
+            val originalIngredient = updatedIngredients[ingredientIndex]
+            updatedIngredients[ingredientIndex] = originalIngredient.copy(name = newName)
+
+            // Create updated recipe
+            val updatedRecipe = recipeData.copy(ingredients = updatedIngredients)
+
+            // Serialize and save
+            val updatedJson = json.encodeToString(RecipeJson.serializer(), updatedRecipe)
+            mealPlanDao.updatePlannedRecipeJson(plannedRecipeId, updatedJson)
+
+            android.util.Log.d("MealPlanRepo",
+                "Updated ingredient $ingredientIndex in recipe ${entity.recipeName}: '${originalIngredient.name}' -> '$newName'"
+            )
+            Result.success(Unit)
+        } catch (e: Exception) {
+            android.util.Log.e("MealPlanRepo", "Failed to update recipe ingredient: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
 }

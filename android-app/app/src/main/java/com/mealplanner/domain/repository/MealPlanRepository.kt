@@ -103,4 +103,18 @@ interface MealPlanRepository {
      * Clear all meal plan data (plans, recipes, history)
      */
     suspend fun clearAll()
+
+    /**
+     * Update an ingredient name in a recipe.
+     * Used to propagate ingredient substitutions from shopping list back to recipes.
+     *
+     * @param plannedRecipeId The ID of the planned recipe to update
+     * @param ingredientIndex The index of the ingredient in the recipe's ingredients list
+     * @param newName The new ingredient name
+     */
+    suspend fun updateRecipeIngredient(
+        plannedRecipeId: Long,
+        ingredientIndex: Int,
+        newName: String
+    ): Result<Unit>
 }

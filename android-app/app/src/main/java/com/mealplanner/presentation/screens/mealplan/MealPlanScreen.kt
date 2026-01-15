@@ -59,6 +59,7 @@ import com.mealplanner.domain.model.RecipeSearchResult
 import com.mealplanner.domain.model.ShoppingCategories
 import com.mealplanner.domain.model.ShoppingItem
 import com.mealplanner.domain.model.ShoppingList
+import com.mealplanner.domain.model.PendingPantryItem
 import com.mealplanner.presentation.components.GenerationLoadingScreen
 import androidx.compose.ui.text.style.TextDecoration
 
@@ -204,6 +205,18 @@ fun MealPlanScreen(
 
                 is MealPlanUiState.PolishingGroceryList -> {
                     GroceryListLoadingScreen()
+                }
+
+                is MealPlanUiState.ConfirmingPantryItems -> {
+                    ConfirmPantryItemsContent(
+                        items = state.items,
+                        editingItemId = state.editingItemId,
+                        onEditItem = { viewModel.setEditingItem(it) },
+                        onUpdateItem = { id, name, qty -> viewModel.updatePendingItem(id, name, qty) },
+                        onRemoveItem = { viewModel.removeItemFromConfirmation(it) },
+                        onConfirm = { viewModel.confirmPantryItems() },
+                        onCancel = { viewModel.cancelConfirmation() }
+                    )
                 }
 
                 is MealPlanUiState.StockingPantry -> {
@@ -1533,4 +1546,272 @@ private fun StockingPantryLoadingScreen() {
             )
         }
     }
+}
+
+/**
+ * Confirmation screen shown before adding items to pantry.
+ * Allows users to edit quantities and names (substitutions) before stocking.
+ */
+@Composable
+private fun ConfirmPantryItemsContent(
+    items: List<PendingPantryItem>,
+    editingItemId: Long?,
+    onEditItem: (Long) -> Unit,
+    onUpdateItem: (Long, String, String) -> Unit,
+    onRemoveItem: (Long) -> Unit,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
+) {
+    // Edit dialog
+    editingItemId?.let { itemId ->
+        val item = items.find { it.shoppingItemId == itemId }
+        if (item != null) {
+            EditPantryItemDialog(
+                item = item,
+                onDismiss = { onEditItem(0L) },  // Clear editing state
+                onSave = { name, qty -> onUpdateItem(itemId, name, qty) }
+            )
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Header with instructions
+        Surface(
+            color = MaterialTheme.colorScheme.primaryContainer,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Inventory2,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Review Items",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Text(
+                            text = "Edit quantities or names before adding to pantry",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Items list
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(items, key = { it.shoppingItemId }) { item ->
+                PendingPantryItemCard(
+                    item = item,
+                    onEdit = { onEditItem(item.shoppingItemId) },
+                    onRemove = { onRemoveItem(item.shoppingItemId) }
+                )
+            }
+        }
+
+        // Bottom action buttons
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shadowElevation = 8.dp
+        ) {
+            Row(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onCancel,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Cancel")
+                }
+
+                Button(
+                    onClick = onConfirm,
+                    modifier = Modifier.weight(1f),
+                    enabled = items.isNotEmpty()
+                ) {
+                    Icon(Icons.Default.Inventory2, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Stock Pantry (${items.size})")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PendingPantryItemCard(
+    item: PendingPantryItem,
+    onEdit: () -> Unit,
+    onRemove: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (item.isModified) {
+                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(12.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Item info
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = item.name,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    if (item.hasSubstitution) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.tertiaryContainer
+                        ) {
+                            Text(
+                                text = "Substituted",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+                Text(
+                    text = item.displayQuantity,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                // Show source recipes if this is a substitution
+                if (item.hasSubstitution && item.sources.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Updates: ${item.sources.joinToString { it.recipeName }}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                }
+            }
+
+            // Edit button
+            IconButton(onClick = onEdit) {
+                Icon(
+                    Icons.Default.Edit,
+                    contentDescription = "Edit",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            // Remove button
+            IconButton(onClick = onRemove) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "Remove",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditPantryItemDialog(
+    item: PendingPantryItem,
+    onDismiss: () -> Unit,
+    onSave: (name: String, quantity: String) -> Unit
+) {
+    var name by remember { mutableStateOf(item.name) }
+    var quantity by remember { mutableStateOf(item.displayQuantity) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Item") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Item name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = quantity,
+                    onValueChange = { quantity = it },
+                    label = { Text("Quantity") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Show substitution warning if name differs
+                if (name != item.originalName && item.sources.isNotEmpty()) {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    "This will update the ingredient in:",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            item.sources.forEach { source ->
+                                Text(
+                                    text = "• ${source.recipeName}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(name.trim(), quantity.trim()) },
+                enabled = name.isNotBlank() && quantity.isNotBlank()
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

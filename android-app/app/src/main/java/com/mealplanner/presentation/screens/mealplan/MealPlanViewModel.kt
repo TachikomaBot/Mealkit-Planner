@@ -5,7 +5,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mealplanner.domain.model.GeneratedMealPlan
 import com.mealplanner.domain.model.GenerationProgress
+import com.mealplanner.domain.model.IngredientSource
 import com.mealplanner.domain.model.MealPlan
+import com.mealplanner.domain.model.PendingPantryItem
 import com.mealplanner.domain.model.Recipe
 import com.mealplanner.domain.model.RecipeSearchResult
 import com.mealplanner.domain.model.ShoppingList
@@ -102,12 +104,14 @@ class MealPlanViewModel @Inject constructor(
             mealPlanRepository.observeCurrentMealPlan()
                 .collect { plan ->
                     val currentState = _uiState.value
-                    // Don't override if we're in a generation/selection/polishing flow
+                    // Don't override if we're in a generation/selection/polishing/confirmation flow
                     if (currentState !is MealPlanUiState.Generating &&
                         currentState !is MealPlanUiState.SelectingRecipes &&
                         currentState !is MealPlanUiState.Browsing &&
                         currentState !is MealPlanUiState.Saving &&
-                        currentState !is MealPlanUiState.PolishingGroceryList) {
+                        currentState !is MealPlanUiState.PolishingGroceryList &&
+                        currentState !is MealPlanUiState.ConfirmingPantryItems &&
+                        currentState !is MealPlanUiState.StockingPantry) {
 
                         if (plan != null) {
                             // Preserve view mode if already in ActivePlan
@@ -373,11 +377,106 @@ class MealPlanViewModel @Inject constructor(
             if (current is MealPlanUiState.ActivePlan) {
                 val mealPlanId = current.mealPlan.id
 
+                try {
+                    // Get checked items and their sources for the confirmation screen
+                    val checkedItems = shoppingRepository.getCheckedItems(mealPlanId)
+                    if (checkedItems.isEmpty()) {
+                        android.util.Log.w("MealPlanVM", "No checked items to add to pantry")
+                        return@launch
+                    }
+
+                    val itemsWithSources = shoppingRepository.getItemsWithSources(mealPlanId)
+                    android.util.Log.d("MealPlanVM", "Building confirmation screen with ${checkedItems.size} items")
+
+                    // Build pending pantry items for confirmation
+                    val pendingItems = checkedItems.map { item ->
+                        val sources = itemsWithSources[item.id] ?: emptyList()
+                        PendingPantryItem(
+                            shoppingItemId = item.id,
+                            name = item.name,
+                            displayQuantity = item.displayQuantity,
+                            isModified = false,
+                            originalName = item.name,
+                            sources = sources
+                        )
+                    }
+
+                    // Show confirmation screen
+                    _uiState.value = MealPlanUiState.ConfirmingPantryItems(
+                        mealPlanId = mealPlanId,
+                        items = pendingItems
+                    )
+                } catch (e: Exception) {
+                    android.util.Log.e("MealPlanVM", "Failed to prepare confirmation: ${e.message}", e)
+                    // Stay on active plan
+                }
+            }
+        }
+    }
+
+    fun updatePendingItem(itemId: Long, newName: String, newQuantity: String) {
+        val current = _uiState.value
+        if (current is MealPlanUiState.ConfirmingPantryItems) {
+            val updatedItems = current.items.map { item ->
+                if (item.shoppingItemId == itemId) {
+                    item.copy(
+                        name = newName,
+                        displayQuantity = newQuantity,
+                        isModified = newName != item.originalName || newQuantity != item.displayQuantity
+                    )
+                } else item
+            }
+            _uiState.value = current.copy(items = updatedItems, editingItemId = null)
+        }
+    }
+
+    fun setEditingItem(itemId: Long?) {
+        val current = _uiState.value
+        if (current is MealPlanUiState.ConfirmingPantryItems) {
+            _uiState.value = current.copy(editingItemId = itemId)
+        }
+    }
+
+    fun removeItemFromConfirmation(itemId: Long) {
+        val current = _uiState.value
+        if (current is MealPlanUiState.ConfirmingPantryItems) {
+            val updatedItems = current.items.filter { it.shoppingItemId != itemId }
+            _uiState.value = current.copy(items = updatedItems)
+        }
+    }
+
+    fun confirmPantryItems() {
+        viewModelScope.launch {
+            val current = _uiState.value
+            if (current is MealPlanUiState.ConfirmingPantryItems) {
+                val mealPlanId = current.mealPlanId
+
                 // Show stocking progress UI
                 _uiState.value = MealPlanUiState.StockingPantry
 
                 try {
-                    // Move checked items to pantry (this calls AI categorization)
+                    // 1. Propagate name substitutions to recipes
+                    for (item in current.items.filter { it.hasSubstitution }) {
+                        android.util.Log.d("MealPlanVM", "Propagating substitution: '${item.originalName}' -> '${item.name}'")
+                        for (source in item.sources) {
+                            mealPlanRepository.updateRecipeIngredient(
+                                plannedRecipeId = source.plannedRecipeId,
+                                ingredientIndex = source.ingredientIndex,
+                                newName = item.name
+                            )
+                        }
+                    }
+
+                    // 2. Update shopping items with edits
+                    for (item in current.items.filter { it.isModified }) {
+                        shoppingRepository.updateItem(
+                            itemId = item.shoppingItemId,
+                            name = item.name,
+                            displayQuantity = item.displayQuantity
+                        )
+                    }
+
+                    // 3. Proceed with AI categorization and pantry stocking
                     val itemsAdded = manageShoppingListUseCase.completeShoppingTrip(mealPlanId)
 
                     // Mark shopping as complete in the meal plan
@@ -407,6 +506,17 @@ class MealPlanViewModel @Inject constructor(
         }
     }
 
+    fun cancelConfirmation() {
+        viewModelScope.launch {
+            val plan = mealPlanRepository.getCurrentMealPlan()
+            if (plan != null) {
+                _uiState.value = MealPlanUiState.ActivePlan(plan, ViewMode.SECONDARY)
+            } else {
+                setEmpty()
+            }
+        }
+    }
+
     fun dismissShoppingCompletion() {
         _shoppingCompletionState.value = null
     }
@@ -429,6 +539,11 @@ sealed class MealPlanUiState {
     ) : MealPlanUiState()
     data object Saving : MealPlanUiState()
     data object PolishingGroceryList : MealPlanUiState()
+    data class ConfirmingPantryItems(
+        val mealPlanId: Long,
+        val items: List<PendingPantryItem>,
+        val editingItemId: Long? = null
+    ) : MealPlanUiState()
     data object StockingPantry : MealPlanUiState()
     data class ActivePlan(
         val mealPlan: MealPlan,

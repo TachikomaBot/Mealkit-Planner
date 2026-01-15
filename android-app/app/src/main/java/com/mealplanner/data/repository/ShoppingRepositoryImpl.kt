@@ -3,6 +3,7 @@ package com.mealplanner.data.repository
 import com.mealplanner.data.local.dao.MealPlanDao
 import com.mealplanner.data.local.dao.ShoppingDao
 import com.mealplanner.data.local.entity.ShoppingItemEntity
+import com.mealplanner.data.local.entity.ShoppingItemSourceEntity
 import com.mealplanner.data.remote.api.MealPlanApi
 import com.mealplanner.data.remote.dto.CategorizedPantryItemDto
 import com.mealplanner.data.remote.dto.GroceryIngredientDto
@@ -13,6 +14,7 @@ import com.mealplanner.data.remote.dto.PantryItemDto
 import com.mealplanner.data.remote.dto.ShoppingItemForPantryDto
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import com.mealplanner.domain.model.IngredientSource
 import com.mealplanner.domain.model.PantryItem
 import com.mealplanner.domain.model.ShoppingCategories
 import com.mealplanner.domain.model.ShoppingItem
@@ -82,30 +84,46 @@ class ShoppingRepositoryImpl @Inject constructor(
             val pantryLookup = buildPantryLookup(pantryItems)
             android.util.Log.d("ShoppingRepo", "Loaded ${pantryItems.size} pantry items for cross-reference")
 
-            // Aggregate ingredients across all recipes
+            // Aggregate ingredients across all recipes with source tracking
             // Only aggregate exact matches - Gemini will handle smart merging during polish
             val aggregatedIngredients = mutableMapOf<String, AggregatedIngredient>()
 
             for (recipe in plannedRecipes) {
-                // Parse recipe JSON to get ingredients
+                // Parse recipe JSON to get ingredients with their indices
                 val ingredients = parseIngredientsFromRecipeJson(recipe.recipeJson)
                 android.util.Log.d("ShoppingRepo", "Recipe '${recipe.recipeName}' has ${ingredients.size} ingredients")
 
-                for (ingredient in ingredients) {
+                for ((ingredientIndex, ingredient) in ingredients.withIndex()) {
                     // Skip items that have sufficient stock in pantry
                     // (Gemini polish will handle other exclusions like salt, water, oil)
                     if (hasSufficientPantryStock(ingredient.name, pantryLookup)) continue
+
+                    // Create source info for this ingredient
+                    val sourceInfo = IngredientSourceInfo(
+                        plannedRecipeId = recipe.id,
+                        recipeName = recipe.recipeName,
+                        ingredientIndex = ingredientIndex,
+                        originalName = ingredient.name,
+                        originalQuantity = ingredient.quantity,
+                        originalUnit = ingredient.unit
+                    )
 
                     // Use lowercase name + unit as key for basic aggregation of exact matches
                     // Gemini will handle smart merging (e.g., "2 small carrots" + "1 large carrot")
                     val key = "${ingredient.name.lowercase().trim()}_${ingredient.unit.lowercase().trim()}"
                     val existing = aggregatedIngredients[key]
                     if (existing != null) {
+                        existing.sources.add(sourceInfo)
                         aggregatedIngredients[key] = existing.copy(
                             quantity = existing.quantity + ingredient.quantity
                         )
                     } else {
-                        aggregatedIngredients[key] = ingredient
+                        aggregatedIngredients[key] = AggregatedIngredient(
+                            name = ingredient.name,
+                            quantity = ingredient.quantity,
+                            unit = ingredient.unit,
+                            sources = mutableListOf(sourceInfo)
+                        )
                     }
                 }
             }
@@ -113,7 +131,9 @@ class ShoppingRepositoryImpl @Inject constructor(
             android.util.Log.d("ShoppingRepo", "Aggregated to ${aggregatedIngredients.size} unique ingredients")
 
             // Convert to shopping items (category will be assigned by Gemini during polish)
-            val shoppingItems = aggregatedIngredients.values.map { ingredient ->
+            // We need to track which aggregated ingredient maps to which shopping item
+            val aggregatedList = aggregatedIngredients.values.toList()
+            val shoppingItems = aggregatedList.map { ingredient ->
                 ShoppingItemEntity(
                     mealPlanId = mealPlanId,
                     ingredientName = ingredient.name,
@@ -124,8 +144,35 @@ class ShoppingRepositoryImpl @Inject constructor(
                 )
             }
 
-            // Insert items
-            shoppingDao.insertItems(shoppingItems)
+            // Insert items (note: we need to get the generated IDs for source tracking)
+            // Room doesn't return IDs for bulk insert with REPLACE, so insert one by one
+            val insertedIds = mutableListOf<Long>()
+            for (item in shoppingItems) {
+                val id = shoppingDao.insertItem(item)
+                insertedIds.add(id)
+            }
+
+            // Insert source records to track where each shopping item came from
+            val sourceEntities = mutableListOf<ShoppingItemSourceEntity>()
+            for ((index, aggregated) in aggregatedList.withIndex()) {
+                val shoppingItemId = insertedIds[index]
+                for (source in aggregated.sources) {
+                    sourceEntities.add(
+                        ShoppingItemSourceEntity(
+                            shoppingItemId = shoppingItemId,
+                            plannedRecipeId = source.plannedRecipeId,
+                            ingredientIndex = source.ingredientIndex,
+                            originalName = source.originalName,
+                            originalQuantity = source.originalQuantity,
+                            originalUnit = source.originalUnit
+                        )
+                    )
+                }
+            }
+            if (sourceEntities.isNotEmpty()) {
+                shoppingDao.insertSources(sourceEntities)
+                android.util.Log.d("ShoppingRepo", "Inserted ${sourceEntities.size} source records")
+            }
 
             // Return the shopping list
             val items = shoppingDao.getItemsForMealPlan(mealPlanId)
@@ -305,11 +352,22 @@ class ShoppingRepositoryImpl @Inject constructor(
         polishedDisplayQuantity = polishedDisplayQuantity
     )
 
-    // Helper class for aggregation
+    // Helper class for aggregation with source tracking
     private data class AggregatedIngredient(
         val name: String,
         val quantity: Double,
-        val unit: String
+        val unit: String,
+        val sources: MutableList<IngredientSourceInfo> = mutableListOf()
+    )
+
+    // Source info for tracking where an ingredient came from
+    private data class IngredientSourceInfo(
+        val plannedRecipeId: Long,
+        val recipeName: String,
+        val ingredientIndex: Int,
+        val originalName: String,
+        val originalQuantity: Double,
+        val originalUnit: String
     )
 
     // JSON structures matching what's stored in the database by MealPlanRepositoryImpl
@@ -451,5 +509,31 @@ class ShoppingRepositoryImpl @Inject constructor(
                 android.util.Log.e("ShoppingRepo", "Categorization failed: ${e.message}", e)
                 Result.failure(e)
             }
+        }
+
+    override suspend fun getItemsWithSources(mealPlanId: Long): Map<Long, List<IngredientSource>> =
+        withContext(Dispatchers.IO) {
+            val sources = shoppingDao.getSourcesForMealPlan(mealPlanId)
+            android.util.Log.d("ShoppingRepo", "Found ${sources.size} source records for meal plan $mealPlanId")
+
+            // Group by shopping item ID and convert to domain model
+            sources.groupBy { it.shoppingItemId }
+                .mapValues { (_, sourceEntities) ->
+                    sourceEntities.map { entity ->
+                        // Get recipe name from the planned recipe
+                        val recipe = mealPlanDao.getPlannedRecipeById(entity.plannedRecipeId)
+                        IngredientSource(
+                            plannedRecipeId = entity.plannedRecipeId,
+                            recipeName = recipe?.recipeName ?: "Unknown Recipe",
+                            ingredientIndex = entity.ingredientIndex
+                        )
+                    }
+                }
+        }
+
+    override suspend fun updateItem(itemId: Long, name: String, displayQuantity: String) =
+        withContext(Dispatchers.IO) {
+            shoppingDao.updateItemNameAndQuantity(itemId, name, displayQuantity)
+            android.util.Log.d("ShoppingRepo", "Updated item $itemId: name='$name', qty='$displayQuantity'")
         }
 }

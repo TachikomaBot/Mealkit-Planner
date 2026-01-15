@@ -1,6 +1,7 @@
 package com.mealplanner.domain.repository
 
 import com.mealplanner.data.remote.dto.CategorizedPantryItemDto
+import com.mealplanner.domain.model.IngredientSource
 import com.mealplanner.domain.model.ShoppingItem
 import com.mealplanner.domain.model.ShoppingList
 import kotlinx.coroutines.flow.Flow
@@ -87,4 +88,17 @@ interface ShoppingRepository {
      * Returns categorized items with proper pantry categories, tracking styles, and expiry dates.
      */
     suspend fun categorizeForPantry(items: List<ShoppingItem>): Result<List<CategorizedPantryItemDto>>
+
+    /**
+     * Get source recipe information for shopping items in a meal plan.
+     * Returns a map of shopping item ID to list of recipe sources.
+     * Used to propagate ingredient substitutions back to recipes.
+     */
+    suspend fun getItemsWithSources(mealPlanId: Long): Map<Long, List<IngredientSource>>
+
+    /**
+     * Update a shopping item's name and display quantity.
+     * Used when user edits items in the confirmation screen.
+     */
+    suspend fun updateItem(itemId: Long, name: String, displayQuantity: String)
 }

@@ -2,6 +2,7 @@ package com.mealplanner.data.local.dao
 
 import androidx.room.*
 import com.mealplanner.data.local.entity.ShoppingItemEntity
+import com.mealplanner.data.local.entity.ShoppingItemSourceEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -48,4 +49,27 @@ interface ShoppingDao {
 
     @Query("DELETE FROM shopping_items")
     suspend fun deleteAll()
+
+    // Source tracking methods for ingredient substitution propagation
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSources(sources: List<ShoppingItemSourceEntity>)
+
+    @Query("SELECT * FROM shopping_item_sources WHERE shoppingItemId = :shoppingItemId")
+    suspend fun getSourcesForItem(shoppingItemId: Long): List<ShoppingItemSourceEntity>
+
+    @Query("""
+        SELECT s.* FROM shopping_item_sources s
+        INNER JOIN shopping_items i ON s.shoppingItemId = i.id
+        WHERE i.mealPlanId = :mealPlanId
+    """)
+    suspend fun getSourcesForMealPlan(mealPlanId: Long): List<ShoppingItemSourceEntity>
+
+    @Query("""
+        DELETE FROM shopping_item_sources
+        WHERE shoppingItemId IN (SELECT id FROM shopping_items WHERE mealPlanId = :mealPlanId)
+    """)
+    suspend fun deleteSourcesForMealPlan(mealPlanId: Long)
+
+    @Query("UPDATE shopping_items SET ingredientName = :name, polishedDisplayQuantity = :displayQuantity WHERE id = :itemId")
+    suspend fun updateItemNameAndQuantity(itemId: Long, name: String, displayQuantity: String)
 }

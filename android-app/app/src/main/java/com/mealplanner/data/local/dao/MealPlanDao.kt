@@ -41,6 +41,12 @@ interface MealPlanDao {
     @Query("DELETE FROM planned_recipes WHERE mealPlanId = :mealPlanId")
     suspend fun deletePlannedRecipes(mealPlanId: Long)
 
+    @Query("SELECT * FROM planned_recipes WHERE id = :id")
+    suspend fun getPlannedRecipeById(id: Long): PlannedRecipeEntity?
+
+    @Query("UPDATE planned_recipes SET recipeJson = :recipeJson WHERE id = :id")
+    suspend fun updatePlannedRecipeJson(id: Long, recipeJson: String)
+
     // Recipe History
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRecipeHistory(history: RecipeHistoryEntity): Long

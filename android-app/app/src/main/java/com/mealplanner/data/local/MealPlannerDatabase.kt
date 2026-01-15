@@ -15,11 +15,12 @@ import com.mealplanner.data.local.entity.*
         PlannedRecipeEntity::class,
         RecipeHistoryEntity::class,
         ShoppingItemEntity::class,
+        ShoppingItemSourceEntity::class,
         UserPreferencesEntity::class,
         PreferenceSummaryEntity::class,
         PantryEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
