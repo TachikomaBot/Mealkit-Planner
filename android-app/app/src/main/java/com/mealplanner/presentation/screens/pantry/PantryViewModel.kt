@@ -71,7 +71,7 @@ class PantryViewModel @Inject constructor(
     fun updateQuantity(itemId: Long, newQuantity: Double, markAsChecked: Boolean = true) {
         viewModelScope.launch {
             pantryRepository.updateQuantity(itemId, newQuantity, markAsChecked)
-            _uiState.update { it.copy(expandedItemId = null) }
+            // Don't close adjuster - user can make multiple adjustments
         }
     }
 
@@ -133,7 +133,7 @@ class PantryViewModel @Inject constructor(
                 lastUpdated = LocalDateTime.now()
             )
             pantryRepository.updateItem(updatedItem)
-            _uiState.update { it.copy(expandedItemId = null) }
+            // Don't close adjuster - user can make multiple adjustments
         }
     }
 }

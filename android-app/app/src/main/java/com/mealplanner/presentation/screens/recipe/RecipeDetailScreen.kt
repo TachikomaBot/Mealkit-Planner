@@ -23,8 +23,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
@@ -657,7 +661,7 @@ private fun CookingStepItem(
                                     modifier = Modifier.padding(end = 8.dp)
                                 )
                                 Text(
-                                    text = substep,
+                                    text = parseMarkdownBold(substep),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1311,5 +1315,31 @@ private fun formatQuantity(quantity: Double): String {
             String.format("%.1f", quantity)
         }
         else -> String.format("%.1f", quantity)
+    }
+}
+
+/**
+ * Parse markdown bold syntax (**text**) and return an AnnotatedString with bold spans.
+ */
+private fun parseMarkdownBold(text: String): AnnotatedString {
+    return buildAnnotatedString {
+        var currentIndex = 0
+        val boldPattern = Regex("\\*\\*(.+?)\\*\\*")
+
+        boldPattern.findAll(text).forEach { match ->
+            // Append text before the match
+            if (match.range.first > currentIndex) {
+                append(text.substring(currentIndex, match.range.first))
+            }
+            // Append the bold text
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                append(match.groupValues[1])
+            }
+            currentIndex = match.range.last + 1
+        }
+        // Append any remaining text
+        if (currentIndex < text.length) {
+            append(text.substring(currentIndex))
+        }
     }
 }

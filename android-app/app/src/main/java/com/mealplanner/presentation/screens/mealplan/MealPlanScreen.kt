@@ -570,12 +570,10 @@ private fun RecipeSelectionContent(
     val selectedCount = selectedIndices.size
     var selectedCategory by remember { mutableStateOf(RecipeCategory.ALL) }
 
-    // Sort recipes: selected first, then by original order
-    // Also filter by category
-    val sortedRecipes = remember(recipes, selectedIndices, selectedCategory) {
+    // Filter by category, keep original order (no re-sorting on selection to avoid jitter)
+    val filteredRecipes = remember(recipes, selectedCategory) {
         recipes.mapIndexed { index, recipe -> index to recipe }
             .filter { (_, recipe) -> recipe.matchesCategory(selectedCategory) }
-            .sortedByDescending { (index, _) -> selectedIndices.contains(index) }
     }
 
     Box(
@@ -614,7 +612,7 @@ private fun RecipeSelectionContent(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(
-                    items = sortedRecipes,
+                    items = filteredRecipes,
                     key = { (index, _) -> index }
                 ) { (index, recipe) ->
                     SelectableRecipeCard(

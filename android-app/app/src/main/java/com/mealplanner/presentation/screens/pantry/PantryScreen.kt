@@ -4,6 +4,7 @@ import com.mealplanner.presentation.theme.Mustard600
 import com.mealplanner.presentation.theme.Mustard700
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -11,7 +12,6 @@ import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
@@ -22,10 +22,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.MenuAnchorType
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxState
-import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,7 +33,10 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mealplanner.domain.model.PantryCategory
 import com.mealplanner.domain.model.PantryItem
@@ -73,14 +72,6 @@ fun PantryScreen(
                     // Actually, let's use White. 
                 )
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { viewModel.showAddDialog() },
-                containerColor = MaterialTheme.colorScheme.primary
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add ingredient")
-            }
         }
     ) { padding ->
         Column(
@@ -102,19 +93,48 @@ fun PantryScreen(
                     onAddItem = { viewModel.showAddDialog() }
                 )
             } else {
-                PantryGrid(
-                    items = uiState.items,
-                    expandedItemId = uiState.expandedItemId,
-                    onItemClick = { item ->
-                        viewModel.expandItem(
-                            if (uiState.expandedItemId == item.id) null else item.id
-                        )
-                    },
-                    onUpdateQuantity = { id, qty -> viewModel.updateQuantity(id, qty) },
-                    onUpdateStockLevel = { id, level -> viewModel.updateStockLevel(id, level) },
-                    onDelete = { viewModel.deleteItem(it) },
-                    onClose = { viewModel.expandItem(null) }
-                )
+                val isAdjusterOpen = uiState.expandedItemId != null
+
+                Box(modifier = Modifier.fillMaxSize()) {
+                    // Grid of pantry cards
+                    PantryGrid(
+                        items = uiState.items,
+                        expandedItemId = uiState.expandedItemId,
+                        onItemClick = { item ->
+                            viewModel.expandItem(
+                                if (uiState.expandedItemId == item.id) null else item.id
+                            )
+                        }
+                    )
+
+                    // Bottom overlay adjuster when an item is selected
+                    uiState.expandedItemId?.let { expandedId ->
+                        val expandedItem = uiState.items.find { it.id == expandedId }
+                        if (expandedItem != null) {
+                            AdjusterOverlay(
+                                item = expandedItem,
+                                onSaveQuantity = { qty -> viewModel.updateQuantity(expandedId, qty) },
+                                onSaveStockLevel = { level -> viewModel.updateStockLevel(expandedId, level) },
+                                onDelete = { viewModel.deleteItem(expandedId) },
+                                onClose = { viewModel.expandItem(null) },
+                                modifier = Modifier.align(Alignment.BottomCenter)
+                            )
+                        }
+                    }
+
+                    // FAB - positioned 25dp above adjuster card when open
+                    // Adjuster height ~88dp (16dp margin + 72dp content), plus 25dp gap
+                    FloatingActionButton(
+                        onClick = { viewModel.showAddDialog() },
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(16.dp)
+                            .padding(bottom = if (isAdjusterOpen) 97.dp else 0.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add ingredient")
+                    }
+                }
             }
         }
 
@@ -257,73 +277,37 @@ private fun EmptyPantryContent(
 private fun PantryGrid(
     items: List<PantryItem>,
     expandedItemId: Long?,
-    onItemClick: (PantryItem) -> Unit,
-    onUpdateQuantity: (Long, Double) -> Unit,
-    onUpdateStockLevel: (Long, StockLevel) -> Unit,
-    onDelete: (Long) -> Unit,
-    onClose: () -> Unit
+    onItemClick: (PantryItem) -> Unit
 ) {
-    val expandedItem = items.find { it.id == expandedItemId }
-    val expandedIndex = items.indexOfFirst { it.id == expandedItemId }
-    val expandedRow = if (expandedIndex >= 0) expandedIndex / 2 else -1
     val listState = rememberLazyGridState()
 
+    // Scroll to selected item when it changes
     LaunchedEffect(expandedItemId) {
-        if (expandedIndex >= 0) {
-            // Scroll to the row containing the item (plus a bit of offset if needed, or just the item itself)
-            // Adjuster is inserted *after* this row. Scrolling to the item ensures it's visible.
-            // We might want to scroll specifically so the adjuster is visible.
-            // Let's scroll to the item index.
-            listState.animateScrollToItem(expandedIndex)
+        if (expandedItemId != null) {
+            val index = items.indexOfFirst { it.id == expandedItemId }
+            if (index >= 0) {
+                listState.animateScrollToItem(index)
+            }
         }
     }
 
     LazyVerticalGrid(
         state = listState,
         columns = GridCells.Fixed(2),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 200.dp), // Extra bottom padding for overlay
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items.forEachIndexed { index, item ->
-            val currentRow = index / 2
-            val isInExpandedRow = expandedRow >= 0 && currentRow == expandedRow
-
-            item(key = item.id) {
-                IngredientCard(
-                    item = item,
-                    isExpanded = item.id == expandedItemId,
-                    isInactiveInPair = isInExpandedRow && item.id != expandedItemId,
-                    onClick = { onItemClick(item) }
-                )
-            }
-
-            // Insert adjuster row after the pair containing the expanded item
-            if (currentRow == expandedRow && index % 2 == 1) {
-                item(span = { GridItemSpan(2) }, key = "adjuster") {
-                    expandedItem?.let { expanded ->
-                        AdjusterRow(
-                            item = expanded,
-                            onSaveQuantity = { qty -> onUpdateQuantity(expanded.id, qty) },
-                            onSaveStockLevel = { level -> onUpdateStockLevel(expanded.id, level) },
-                            onDelete = { onDelete(expanded.id) },
-                            onClose = onClose
-                        )
-                    }
-                }
-            } else if (currentRow == expandedRow && index == items.lastIndex && index % 2 == 0) {
-                item(span = { GridItemSpan(2) }, key = "adjuster") {
-                    expandedItem?.let { expanded ->
-                        AdjusterRow(
-                            item = expanded,
-                            onSaveQuantity = { qty -> onUpdateQuantity(expanded.id, qty) },
-                            onSaveStockLevel = { level -> onUpdateStockLevel(expanded.id, level) },
-                            onDelete = { onDelete(expanded.id) },
-                            onClose = onClose
-                        )
-                    }
-                }
-            }
+        items(
+            count = items.size,
+            key = { index -> items[index].id }
+        ) { index ->
+            val item = items[index]
+            IngredientCard(
+                item = item,
+                isExpanded = item.id == expandedItemId,
+                onClick = { onItemClick(item) }
+            )
         }
     }
 }
@@ -332,7 +316,6 @@ private fun PantryGrid(
 private fun IngredientCard(
     item: PantryItem,
     isExpanded: Boolean,
-    isInactiveInPair: Boolean,
     onClick: () -> Unit
 ) {
     // For visual fill, use effective stock level for STOCK_LEVEL items
@@ -357,17 +340,6 @@ private fun IngredientCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
         ),
-        border = if (isExpanded) {
-            CardDefaults.outlinedCardBorder().copy(
-                width = 2.dp,
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.primary,
-                        MaterialTheme.colorScheme.primary
-                    )
-                )
-            )
-        } else null,
         onClick = onClick
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -393,11 +365,7 @@ private fun IngredientCard(
                     .fillMaxSize()
                     .padding(4.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(
-                        MaterialTheme.colorScheme.surface.copy(
-                            alpha = if (isInactiveInPair) 0.7f else 1f
-                        )
-                    )
+                    .background(MaterialTheme.colorScheme.surface)
             ) {
                 // Category emoji placeholder
                 Box(
@@ -407,13 +375,11 @@ private fun IngredientCard(
                     Text(
                         text = getCategoryEmoji(item.category),
                         style = MaterialTheme.typography.displayMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
-                            alpha = if (isInactiveInPair) 0.3f else 0.4f
-                        )
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                     )
                 }
 
-                // Gradient overlay for text readability
+                // Gradient overlay for text readability (blue when active, black otherwise)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -421,7 +387,10 @@ private fun IngredientCard(
                         .align(Alignment.BottomCenter)
                         .background(
                             Brush.verticalGradient(
-                                colors = listOf(
+                                colors = if (isExpanded) listOf(
+                                    Color.Transparent,
+                                    Color(0xFF22D3EE).copy(alpha = 0.8f)  // Cyan gradient when active
+                                ) else listOf(
                                     Color.Transparent,
                                     Color.Black.copy(alpha = 0.7f)
                                 )
@@ -510,7 +479,37 @@ private fun IngredientCard(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Bottom overlay wrapper for the adjuster, with proper styling and padding.
+ */
+@Composable
+private fun AdjusterOverlay(
+    item: PantryItem,
+    onSaveQuantity: (Double) -> Unit,
+    onSaveStockLevel: (StockLevel) -> Unit,
+    onDelete: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 16.dp),
+        shape = RoundedCornerShape(16.dp),
+        shadowElevation = 8.dp,
+        tonalElevation = 2.dp
+    ) {
+        AdjusterRow(
+            item = item,
+            onSaveQuantity = onSaveQuantity,
+            onSaveStockLevel = onSaveStockLevel,
+            onDelete = onDelete,
+            onClose = onClose
+        )
+    }
+}
+
 @Composable
 private fun AdjusterRow(
     item: PantryItem,
@@ -519,290 +518,259 @@ private fun AdjusterRow(
     onDelete: () -> Unit,
     onClose: () -> Unit
 ) {
-    // Hoisted state
+    // Store original values when pane opens (for undo)
+    val originalQuantity = remember { item.quantityRemaining }
+    val originalStockLevel = remember { item.effectiveStockLevel }
+
+    // Current editing state
     var currentStockLevel by remember(item.effectiveStockLevel) { mutableStateOf(item.effectiveStockLevel) }
     var currentQuantity by remember(item.quantityRemaining) { mutableDoubleStateOf(item.quantityRemaining) }
 
-    val swipeState = rememberSwipeToDismissBoxState(
-        positionalThreshold = { totalDistance -> totalDistance * 0.75f },
-        confirmValueChange = { value ->
-            when (value) {
-                SwipeToDismissBoxValue.StartToEnd -> {
-                    // Save
-                    if (item.trackingStyle == TrackingStyle.STOCK_LEVEL) {
-                        onSaveStockLevel(currentStockLevel)
-                    } else {
-                        onSaveQuantity(currentQuantity)
-                    }
-                    onClose() // Close after save as per user request
-                    true
-                }
-                SwipeToDismissBoxValue.EndToStart -> {
-                    // Delete
-                    onDelete()
-                    true
-                }
-                else -> false
-            }
+    // Check if values have changed from original
+    val hasChanges = when (item.trackingStyle) {
+        TrackingStyle.STOCK_LEVEL -> currentStockLevel != originalStockLevel
+        else -> currentQuantity != originalQuantity
+    }
+
+    // Debounce auto-save: wait 250ms after last change before saving
+    val coroutineScope = rememberCoroutineScope()
+    var saveJob by remember { mutableStateOf<Job?>(null) }
+
+    fun debounceSaveQuantity(quantity: Double) {
+        saveJob?.cancel()
+        saveJob = coroutineScope.launch {
+            delay(250L)
+            onSaveQuantity(quantity)
         }
-    )
+    }
 
-    SwipeToDismissBox(
-        state = swipeState,
-        backgroundContent = {
-            val color = when (swipeState.dismissDirection) {
-                SwipeToDismissBoxValue.StartToEnd -> Color(0xFF4CAF50) // Green for Save
-                SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.error // Red for Delete
-                else -> Color.Transparent
-            }
-            val alignment = when (swipeState.dismissDirection) {
-                SwipeToDismissBoxValue.StartToEnd -> Alignment.CenterStart
-                SwipeToDismissBoxValue.EndToStart -> Alignment.CenterEnd
-                else -> Alignment.Center
-            }
-            val icon = when (swipeState.dismissDirection) {
-                SwipeToDismissBoxValue.StartToEnd -> Icons.Default.Check
-                SwipeToDismissBoxValue.EndToStart -> Icons.Default.Delete
-                else -> Icons.Default.Info
-            }
+    fun debounceSaveStockLevel(level: StockLevel) {
+        saveJob?.cancel()
+        saveJob = coroutineScope.launch {
+            delay(250L)
+            onSaveStockLevel(level)
+        }
+    }
 
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(vertical = 8.dp)
-                    .clip(RoundedCornerShape(12.dp)) // Match card shape
-                    .background(color)
-                    .padding(horizontal = 20.dp),
-                contentAlignment = alignment
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = Color.White
-                )
-            }
-        },
-        content = {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp)
+    // All tracking types use single-row layout: Delete | content | Undo
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Delete button
+        IconButton(
+            onClick = onDelete,
+            colors = IconButtonDefaults.iconButtonColors(
+                contentColor = MaterialTheme.colorScheme.error
+            )
+        ) {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = "Delete item"
+            )
+        }
+
+        // Center content varies by tracking type
+        when (item.trackingStyle) {
+            TrackingStyle.STOCK_LEVEL -> {
+                // Single row of stock level chips
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Different UI based on tracking style
-                    when (item.trackingStyle) {
-                        TrackingStyle.STOCK_LEVEL -> {
-                            StockLevelAdjuster(
-                                currentLevel = currentStockLevel,
-                                onLevelChange = { currentStockLevel = it }
-                            )
-                        }
-                        TrackingStyle.COUNT -> {
-                            CountAdjuster(
-                                item = item,
-                                currentCount = currentQuantity,
-                                onCountChange = { currentQuantity = it }
-                            )
-                        }
-                        TrackingStyle.PRECISE -> {
-                            PreciseAdjuster(
-                                item = item,
-                                currentQuantity = currentQuantity,
-                                onQuantityChange = { currentQuantity = it }
-                            )
-                        }
+                    StockLevel.entries.forEach { level ->
+                        StockLevelChip(
+                            level = level,
+                            isSelected = currentStockLevel == level,
+                            onClick = {
+                                currentStockLevel = level
+                                debounceSaveStockLevel(level)
+                            }
+                        )
                     }
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    // Helper text for swipe
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                }
+            }
+            TrackingStyle.COUNT -> {
+                // Minus | value | Plus
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RepeatingIconButton(
+                        onClick = {
+                            val newCount = (currentQuantity - getIncrement(currentQuantity, item.quantityInitial)).coerceAtLeast(0.0)
+                            currentQuantity = newCount
+                            debounceSaveQuantity(newCount)
+                        },
+                        enabled = currentQuantity > 0,
+                        delayMillis = getRepeatDelay(currentQuantity)
+                    ) {
+                        Icon(Icons.Default.Remove, contentDescription = "Decrease")
+                    }
+
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.widthIn(min = 80.dp)
                     ) {
                         Text(
-                            text = "Swipe right to save",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            text = formatQuantity(currentQuantity),
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            textAlign = TextAlign.Center
                         )
-                         Text(
-                            text = "Swipe left to delete",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        Text(
+                            text = item.unit.displayName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
                         )
+                    }
+
+                    RepeatingIconButton(
+                        onClick = {
+                            val newCount = currentQuantity + getIncrement(currentQuantity, item.quantityInitial)
+                            currentQuantity = newCount
+                            debounceSaveQuantity(newCount)
+                        },
+                        delayMillis = getRepeatDelay(currentQuantity)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Increase")
+                    }
+                }
+            }
+            TrackingStyle.PRECISE -> {
+                // Minus | value | Plus
+                val increment = if (currentQuantity < 5 || item.quantityInitial < 5) 0.5 else 1.0
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RepeatingIconButton(
+                        onClick = {
+                            val newQty = (currentQuantity - increment).coerceAtLeast(0.0)
+                            currentQuantity = newQty
+                            debounceSaveQuantity(newQty)
+                        },
+                        enabled = currentQuantity > 0,
+                        delayMillis = getRepeatDelay(currentQuantity)
+                    ) {
+                        Icon(Icons.Default.Remove, contentDescription = "Decrease")
+                    }
+
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.widthIn(min = 80.dp)
+                    ) {
+                        Text(
+                            text = formatQuantity(currentQuantity),
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            text = item.unit.displayName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+
+                    RepeatingIconButton(
+                        onClick = {
+                            val newQty = currentQuantity + increment
+                            currentQuantity = newQty
+                            debounceSaveQuantity(newQty)
+                        },
+                        delayMillis = getRepeatDelay(currentQuantity)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Increase")
                     }
                 }
             }
         }
+
+        // Undo button
+        IconButton(
+            onClick = {
+                if (item.trackingStyle == TrackingStyle.STOCK_LEVEL) {
+                    currentStockLevel = originalStockLevel
+                    debounceSaveStockLevel(originalStockLevel)
+                } else {
+                    currentQuantity = originalQuantity
+                    debounceSaveQuantity(originalQuantity)
+                }
+            },
+            enabled = hasChanges
+        ) {
+            Icon(
+                imageVector = Icons.Default.Refresh,
+                contentDescription = "Undo changes",
+                tint = if (hasChanges) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun StockLevelChip(
+    level: StockLevel,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val (containerColor, labelColor, borderColor) = when (level) {
+        StockLevel.OUT_OF_STOCK -> Triple(
+            if (isSelected) Color(0xFFFFCDD2) else Color.Transparent,
+            if (isSelected) Color(0xFFC62828) else MaterialTheme.colorScheme.onSurface,
+            Color(0xFFE57373)
+        )
+        StockLevel.LOW -> Triple(
+            if (isSelected) Color(0xFFFFE0B2) else Color.Transparent,
+            if (isSelected) Color(0xFFE65100) else MaterialTheme.colorScheme.onSurface,
+            Color(0xFFFFB74D)
+        )
+        StockLevel.SOME -> Triple(
+            if (isSelected) Color(0xFFFFF9C4) else Color.Transparent,
+            if (isSelected) Color(0xFFF9A825) else MaterialTheme.colorScheme.onSurface,
+            Color(0xFFFFD54F)
+        )
+        StockLevel.PLENTY -> Triple(
+            if (isSelected) Color(0xFFC8E6C9) else Color.Transparent,
+            if (isSelected) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurface,
+            Color(0xFF81C784)
+        )
+    }
+
+    FilterChip(
+        selected = isSelected,
+        onClick = onClick,
+        label = {
+            Text(
+                text = level.displayName,
+                color = labelColor,
+                style = MaterialTheme.typography.labelMedium
+            )
+        },
+        modifier = Modifier.width(72.dp),
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = containerColor,
+            containerColor = Color.Transparent
+        ),
+        border = FilterChipDefaults.filterChipBorder(
+            enabled = true,
+            selected = isSelected,
+            borderColor = borderColor,
+            selectedBorderColor = borderColor,
+            borderWidth = 1.dp,
+            selectedBorderWidth = 2.dp
+        )
     )
-}
-
-@Composable
-private fun StockLevelAdjuster(
-    currentLevel: StockLevel,
-    onLevelChange: (StockLevel) -> Unit
-) {
-    // Stateless: selectedLevel is passed in as currentLevel
-
-
-    Column {
-        Text(
-            text = "Stock Level",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Stock level buttons
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            StockLevel.entries.forEach { level ->
-                FilterChip(
-                    selected = currentLevel == level,
-                    onClick = { onLevelChange(level) },
-                    label = { Text(level.displayName) },
-                    modifier = Modifier.weight(1f),
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = when (level) {
-                            StockLevel.OUT_OF_STOCK -> MaterialTheme.colorScheme.errorContainer
-                            StockLevel.LOW -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)
-                            StockLevel.SOME -> MaterialTheme.colorScheme.primaryContainer
-                            StockLevel.PLENTY -> MaterialTheme.colorScheme.primary
-                        }
-                    )
-                )
-            }
-        }
-
-    }
-}
-
-@Composable
-private fun CountAdjuster(
-    item: PantryItem,
-    currentCount: Double,
-    onCountChange: (Double) -> Unit
-) {
-    // Increment based on quantity magnitude
-    val increment = getIncrement(currentCount, item.quantityInitial)
-
-    Column {
-        // Count display with +/- buttons
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            RepeatingIconButton(
-                onClick = {
-                    val newCount = (currentCount - getIncrement(currentCount, item.quantityInitial)).coerceAtLeast(0.0)
-                    onCountChange(newCount)
-                },
-                enabled = currentCount > 0,
-                delayMillis = getRepeatDelay(currentCount)
-            ) {
-                Icon(Icons.Default.Remove, contentDescription = "Decrease")
-            }
-
-            Spacer(modifier = Modifier.width(24.dp))
-
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = formatQuantity(currentCount),
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = item.unit.displayName,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Spacer(modifier = Modifier.width(24.dp))
-
-            RepeatingIconButton(
-                onClick = { onCountChange(currentCount + getIncrement(currentCount, item.quantityInitial)) },
-                enabled = true,
-                delayMillis = getRepeatDelay(currentCount)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Increase")
-            }
-        }
-    }
-}
-
-@Composable
-private fun PreciseAdjuster(
-    item: PantryItem,
-    currentQuantity: Double,
-    onQuantityChange: (Double) -> Unit
-) {
-    // Use 0.5 increment for small quantities, 1.0 for larger ones
-    val increment = if (currentQuantity < 5 || item.quantityInitial < 5) 0.5 else 1.0
-    // Repeat delay based on quantity magnitude
-    val repeatDelay = getRepeatDelay(currentQuantity)
-
-    Column {
-        // Quantity display with +/- buttons
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            RepeatingIconButton(
-                onClick = {
-                    val newQty = (currentQuantity - increment).coerceAtLeast(0.0)
-                    onQuantityChange(newQty)
-                },
-                enabled = currentQuantity > 0,
-                delayMillis = repeatDelay
-            ) {
-                Icon(Icons.Default.Remove, contentDescription = "Decrease")
-            }
-
-            Spacer(modifier = Modifier.width(24.dp))
-
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = formatQuantity(currentQuantity),
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = item.unit.displayName,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Spacer(modifier = Modifier.width(24.dp))
-
-            RepeatingIconButton(
-                onClick = { onQuantityChange(currentQuantity + increment) },
-                delayMillis = repeatDelay
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Increase")
-            }
-        }
-
-        // Show initial quantity reference
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "Started with: ${formatQuantity(item.quantityInitial)} ${item.unit.displayName}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.align(Alignment.CenterHorizontally)
-        )
-    }
 }
 
 /**
@@ -963,7 +931,11 @@ private fun AddIngredientDialog(
                 }
 
                 // Expiry days (only for perishables)
-                AnimatedVisibility(visible = isPerishable) {
+                AnimatedVisibility(
+                    visible = isPerishable,
+                    enter = expandVertically(animationSpec = tween(200)) + fadeIn(animationSpec = tween(200)),
+                    exit = shrinkVertically(animationSpec = tween(150)) + fadeOut(animationSpec = tween(100))
+                ) {
                     OutlinedTextField(
                         value = expiryDays,
                         onValueChange = { expiryDays = it.filter { c -> c.isDigit() } },
