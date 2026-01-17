@@ -378,7 +378,33 @@ function extractAndParseJSON(text: string, expectedKey: string): Record<string, 
   // Remove markdown code blocks if present
   let cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '');
 
-  // Try to find JSON object containing the expected key
+  // Helper to apply common JSON fixes
+  const fixCommonIssues = (json: string): string => {
+    return json
+      // Remove trailing commas before ] or }
+      .replace(/,(\s*[}\]])/g, '$1')
+      // Fix unescaped newlines in strings (common Gemini issue)
+      .replace(/([^\\])\\n/g, '$1\\\\n');
+  };
+
+  // Strategy 1: Try to find balanced JSON directly from the cleaned text
+  // This is more reliable than regex when there's extra text after the JSON
+  const firstBrace = cleaned.indexOf('{');
+  if (firstBrace !== -1) {
+    const balancedJson = findBalancedJSON(cleaned.slice(firstBrace));
+    if (balancedJson && balancedJson.includes(`"${expectedKey}"`)) {
+      try {
+        const fixed = fixCommonIssues(balancedJson);
+        const parsed = JSON.parse(fixed);
+        console.log('[JSON] Parsed using balanced extraction');
+        return parsed;
+      } catch (e) {
+        console.log(`[JSON] Balanced extraction parse failed: ${(e as Error).message}`);
+      }
+    }
+  }
+
+  // Strategy 2: Fall back to regex matching
   const jsonRegex = new RegExp(`\\{[\\s\\S]*"${expectedKey}"[\\s\\S]*\\}`, 'g');
   const matches = cleaned.match(jsonRegex);
 
@@ -390,24 +416,18 @@ function extractAndParseJSON(text: string, expectedKey: string): Record<string, 
   // Try each match (in case there are multiple JSON objects)
   for (const match of matches) {
     try {
-      // Fix common JSON issues
-      let fixedJson = match
-        // Remove trailing commas before ] or }
-        .replace(/,(\s*[}\]])/g, '$1')
-        // Fix unescaped newlines in strings (common Gemini issue)
-        .replace(/([^\\])\\n/g, '$1\\\\n');
-
+      const fixedJson = fixCommonIssues(match);
       return JSON.parse(fixedJson);
     } catch (e) {
       const parseError = e as Error;
-      console.log(`[JSON] Initial parse failed: ${parseError.message}`);
+      console.log(`[JSON] Regex match parse failed: ${parseError.message}`);
 
-      // Try more aggressive fixes
+      // Try balanced extraction on the match
       try {
-        // Sometimes Gemini adds extra text after the JSON
         const bracketMatch = findBalancedJSON(match);
         if (bracketMatch) {
-          return JSON.parse(bracketMatch);
+          const fixed = fixCommonIssues(bracketMatch);
+          return JSON.parse(fixed);
         }
       } catch (e2) {
         console.log(`[JSON] Balanced JSON extraction failed: ${(e2 as Error).message}`);
@@ -417,7 +437,8 @@ function extractAndParseJSON(text: string, expectedKey: string): Record<string, 
       try {
         const repaired = repairTruncatedJSON(match);
         if (repaired) {
-          const parsed = JSON.parse(repaired);
+          const fixed = fixCommonIssues(repaired);
+          const parsed = JSON.parse(fixed);
           console.log('[JSON] Successfully repaired truncated JSON');
           return parsed;
         }
@@ -535,22 +556,33 @@ function repairTruncatedJSON(text: string): string | null {
 }
 
 /**
- * Find a balanced JSON object by counting braces
+ * Find a balanced JSON object by counting braces (string-aware)
  */
 function findBalancedJSON(text: string): string | null {
   let depth = 0;
   let start = -1;
+  let inString = false;
 
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
+    const prevChar = i > 0 ? text[i - 1] : '';
 
-    if (char === '{') {
-      if (depth === 0) start = i;
-      depth++;
-    } else if (char === '}') {
-      depth--;
-      if (depth === 0 && start !== -1) {
-        return text.slice(start, i + 1);
+    // Handle string boundaries (skip escaped quotes)
+    if (char === '"' && prevChar !== '\\') {
+      inString = !inString;
+      continue;
+    }
+
+    // Only count braces outside strings
+    if (!inString) {
+      if (char === '{') {
+        if (depth === 0) start = i;
+        depth++;
+      } else if (char === '}') {
+        depth--;
+        if (depth === 0 && start !== -1) {
+          return text.slice(start, i + 1);
+        }
       }
     }
   }
