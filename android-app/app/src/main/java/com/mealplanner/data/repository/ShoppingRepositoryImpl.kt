@@ -722,9 +722,9 @@ class ShoppingRepositoryImpl @Inject constructor(
      * Clean up stale pending jobs older than 1 hour.
      * Should be called on app startup.
      */
-    override suspend fun cleanupStaleJobs() = withContext(Dispatchers.IO) {
+    override suspend fun cleanupStaleJobs(): Unit = withContext(Dispatchers.IO) {
         val cutoffTime = System.currentTimeMillis() - STALE_JOB_CUTOFF_MS
-        val deleted = pendingJobDao.deleteStaleJobs(cutoffTime)
+        pendingJobDao.deleteStaleJobs(cutoffTime)
         android.util.Log.d("ShoppingRepo", "Cleaned up stale jobs older than 1 hour")
     }
 
