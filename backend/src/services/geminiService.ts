@@ -1145,6 +1145,13 @@ YOUR JOB:
    - "Chicken Breast: 450g (2 pieces)"
    - "Salmon Fillets: 350g (2 fillets)"
    - "Ground Beef: 500g"
+   - "Eggs: 1 carton" (NOT individual eggs - a carton has 12 eggs)
+
+   DRIED PASTA/NOODLES - Use packages, not grams:
+   - Spaghetti, Linguine, Penne, etc. → "1 package" (packages are typically 500g)
+   - Asian noodles (Lo Mein, Rice Noodles, Udon) → "1 package"
+   - Only use grams if the recipe needs a very small amount (under 100g) → still round up to "1 package"
+   - These are shelf-stable items bought in standard package sizes
 
    PANTRY - Exclude tiny recipe amounts:
    - Skip items like cornstarch, flour, sugar in small quantities - these are pantry staples
@@ -1158,6 +1165,12 @@ YOUR JOB:
 
 CATEGORIES (use exactly one):
 Produce, Protein, Dairy, Bakery, Pantry, Frozen, Condiments, Spices
+
+CATEGORY NOTES:
+- Eggs → Protein (NOT Dairy)
+- Dried pasta, noodles, rice, grains → Pantry
+- Breadcrumbs, panko → Pantry
+- Fresh pasta → Refrigerated/Dairy
 
 Input ingredients:
 ${ingredientsJson}
@@ -1393,8 +1406,8 @@ RULES - You MUST follow these exactly:
 
 CATEGORY - Assign based on what the item IS:
 - "PRODUCE" = Fresh vegetables, fruits, herbs (basil, parsley, chives, green onions, lettuce, tomatoes, carrots)
-- "PROTEIN" = Fish, meat, poultry, seafood, tofu (salmon, chicken, beef, shrimp)
-- "DAIRY" = Cheese, milk, yogurt, butter, cream (mozzarella, parmesan, cheddar)
+- "PROTEIN" = Fish, meat, poultry, seafood, tofu, EGGS (salmon, chicken, beef, shrimp, eggs)
+- "DAIRY" = Cheese, milk, yogurt, butter, cream (mozzarella, parmesan, cheddar) - NOTE: Eggs are NOT dairy!
 - "DRY_GOODS" = Bread, pasta, rice, flour, canned goods, cereals
 - "SPICE" = Dried spices and seasonings (paprika, cumin, oregano)
 - "OILS" = Cooking oils and vinegars (olive oil, vegetable oil, sesame oil, balsamic vinegar)
@@ -1405,6 +1418,7 @@ CATEGORY - Assign based on what the item IS:
 TRACKING STYLE:
 - "STOCK_LEVEL" with stockLevel="FULL" for: oils, spices, condiments, flour, sugar, rice
 - "PRECISE" with stockLevel=null for: produce, proteins, dairy, frozen
+- For EGGS: use "PRECISE" with unit="COUNT" - convert cartons to individual eggs (1 carton = 12 eggs)
 
 EXPIRY DAYS - Set based on category:
 - Fresh herbs (basil, parsley, chives, cilantro): 4
@@ -1412,6 +1426,7 @@ EXPIRY DAYS - Set based on category:
 - Fish/seafood: 3
 - Poultry: 4
 - Red meat: 5
+- Eggs: 21
 - Dairy/cheese: 10
 - Bread: 5
 - Oils, spices, condiments, dry goods: null (shelf stable)
@@ -1426,7 +1441,8 @@ EXAMPLE OUTPUT:
     {"id": 2, "name": "Fresh Basil", "quantity": 1, "unit": "BUNCH", "category": "PRODUCE", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": 4, "perishable": true},
     {"id": 3, "name": "Olive Oil", "quantity": 500, "unit": "MILLILITERS", "category": "OILS", "trackingStyle": "STOCK_LEVEL", "stockLevel": "FULL", "expiryDays": null, "perishable": false},
     {"id": 4, "name": "Frozen Peas", "quantity": 500, "unit": "GRAMS", "category": "FROZEN", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": null, "perishable": true},
-    {"id": 5, "name": "Fresh Mozzarella", "quantity": 250, "unit": "GRAMS", "category": "DAIRY", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": 10, "perishable": true}
+    {"id": 5, "name": "Fresh Mozzarella", "quantity": 250, "unit": "GRAMS", "category": "DAIRY", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": 10, "perishable": true},
+    {"id": 6, "name": "Eggs", "quantity": 12, "unit": "COUNT", "category": "PROTEIN", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": 21, "perishable": true}
   ]
 }
 
