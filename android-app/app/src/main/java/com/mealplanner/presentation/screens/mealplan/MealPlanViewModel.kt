@@ -523,7 +523,12 @@ class MealPlanViewModel @Inject constructor(
     fun removeItemFromConfirmation(itemId: Long) {
         val current = _uiState.value
         if (current is MealPlanUiState.ConfirmingPantryItems) {
-            val updatedItems = current.items.filter { it.shoppingItemId != itemId }
+            // Toggle isRemoved flag instead of removing from list (allows "skipped" display)
+            val updatedItems = current.items.map { item ->
+                if (item.shoppingItemId == itemId) {
+                    item.copy(isRemoved = !item.isRemoved)
+                } else item
+            }
             _uiState.value = current.copy(items = updatedItems)
         }
     }
@@ -538,8 +543,14 @@ class MealPlanViewModel @Inject constructor(
                 _uiState.value = MealPlanUiState.StockingPantry
 
                 try {
-                    // 1. Propagate name substitutions to recipes using AI
-                    for (item in current.items.filter { it.hasSubstitution }) {
+                    // First, uncheck any items that were skipped so they won't be added to pantry
+                    val removedItems = current.items.filter { it.isRemoved }
+                    for (item in removedItems) {
+                        shoppingRepository.toggleItemChecked(item.shoppingItemId)
+                    }
+
+                    // 1. Propagate name substitutions to recipes using AI (only for active items)
+                    for (item in current.items.filter { it.hasSubstitution && !it.isRemoved }) {
                         android.util.Log.d("MealPlanVM", "Processing substitution: '${item.originalName}' -> '${item.name}'")
 
                         for (source in item.sources) {
@@ -598,8 +609,8 @@ class MealPlanViewModel @Inject constructor(
                         }
                     }
 
-                    // 2. Update shopping items with edits
-                    for (item in current.items.filter { it.isModified }) {
+                    // 2. Update shopping items with edits (only for active items)
+                    for (item in current.items.filter { it.isModified && !it.isRemoved }) {
                         shoppingRepository.updateItem(
                             itemId = item.shoppingItemId,
                             name = item.name,

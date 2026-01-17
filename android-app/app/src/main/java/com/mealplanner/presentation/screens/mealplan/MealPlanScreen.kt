@@ -1562,7 +1562,8 @@ private fun StockingPantryLoadingScreen() {
 
 /**
  * Confirmation screen shown before adding items to pantry.
- * Allows users to edit quantities and names (substitutions) before stocking.
+ * Matches the design pattern of DeductionConfirmationScreen with clickable cards
+ * and inline adjusters.
  */
 @Composable
 private fun ConfirmPantryItemsContent(
@@ -1574,17 +1575,7 @@ private fun ConfirmPantryItemsContent(
     onConfirm: () -> Unit,
     onCancel: () -> Unit
 ) {
-    // Edit dialog
-    editingItemId?.let { itemId ->
-        val item = items.find { it.shoppingItemId == itemId }
-        if (item != null) {
-            EditPantryItemDialog(
-                item = item,
-                onDismiss = { onEditItem(0L) },  // Clear editing state
-                onSave = { name, qty -> onUpdateItem(itemId, name, qty) }
-            )
-        }
-    }
+    val activeItems = items.filter { !it.isRemoved }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // Header with instructions
@@ -1604,12 +1595,13 @@ private fun ConfirmPantryItemsContent(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = "Review Items",
+                            text = "Add to Pantry",
                             style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                         Text(
-                            text = "Edit quantities or names before adding to pantry",
+                            text = "Tap items to edit before stocking",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                         )
@@ -1618,7 +1610,7 @@ private fun ConfirmPantryItemsContent(
             }
         }
 
-        // Items list
+        // Items list with inline adjusters
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
@@ -1626,12 +1618,34 @@ private fun ConfirmPantryItemsContent(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(items, key = { it.shoppingItemId }) { item ->
-                PendingPantryItemCard(
+            items(
+                items = items,
+                key = { it.shoppingItemId }
+            ) { item ->
+                val isEditing = editingItemId == item.shoppingItemId
+
+                // Item card - clicking toggles this item's adjuster
+                AdditionItemCard(
                     item = item,
-                    onEdit = { onEditItem(item.shoppingItemId) },
-                    onRemove = { onRemoveItem(item.shoppingItemId) }
+                    isActive = isEditing,
+                    onClick = {
+                        // Toggle: if already editing this item, close it; otherwise open it
+                        if (isEditing) {
+                            onEditItem(0L)
+                        } else {
+                            onEditItem(item.shoppingItemId)
+                        }
+                    }
                 )
+
+                // Adjuster row (shown when editing this item)
+                if (isEditing) {
+                    AdditionAdjusterRow(
+                        item = item,
+                        onSave = { name, qty -> onUpdateItem(item.shoppingItemId, name, qty) },
+                        onToggleRemove = { onRemoveItem(item.shoppingItemId) }
+                    )
+                }
             }
         }
 
@@ -1656,30 +1670,46 @@ private fun ConfirmPantryItemsContent(
                 Button(
                     onClick = onConfirm,
                     modifier = Modifier.weight(1f),
-                    enabled = items.isNotEmpty()
+                    enabled = activeItems.isNotEmpty()
                 ) {
-                    Icon(Icons.Default.Inventory2, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Stock Pantry (${items.size})")
+                    Text("Confirm (${activeItems.size})")
                 }
             }
         }
     }
 }
 
+/**
+ * Clickable item card for the pantry addition confirmation screen.
+ * Shows item name with quantity badge. Matches DeductionItemCard design.
+ */
 @Composable
-private fun PendingPantryItemCard(
+private fun AdditionItemCard(
     item: PendingPantryItem,
-    onEdit: () -> Unit,
-    onRemove: () -> Unit
+    isActive: Boolean,
+    onClick: () -> Unit
 ) {
+    val isRemoved = item.isRemoved
+
+    // Light blue highlight for active item (works in both light and dark mode)
+    val activeColor = if (isSystemInDarkTheme()) {
+        Pacific600.copy(alpha = 0.3f)
+    } else {
+        Pacific500.copy(alpha = 0.2f)
+    }
+
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
-            containerColor = if (item.isModified) {
-                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
-            } else {
-                MaterialTheme.colorScheme.surface
+            containerColor = when {
+                isActive -> activeColor
+                isRemoved -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                item.isModified -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                else -> MaterialTheme.colorScheme.surface
             }
         )
     ) {
@@ -1694,9 +1724,11 @@ private fun PendingPantryItemCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = item.name,
-                        style = MaterialTheme.typography.bodyLarge
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (isRemoved) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                               else MaterialTheme.colorScheme.onSurface
                     )
-                    if (item.hasSubstitution) {
+                    if (item.hasSubstitution && !isRemoved) {
                         Spacer(modifier = Modifier.width(8.dp))
                         Surface(
                             shape = RoundedCornerShape(4.dp),
@@ -1711,119 +1743,178 @@ private fun PendingPantryItemCard(
                         }
                     }
                 }
-                Text(
-                    text = item.displayQuantity,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
                 // Show source recipes if this is a substitution
-                if (item.hasSubstitution && item.sources.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
+                if (item.hasSubstitution && item.sources.isNotEmpty() && !isRemoved) {
                     Text(
                         text = "Updates: ${item.sources.joinToString { it.recipeName }}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.tertiary
+                        color = MaterialTheme.colorScheme.tertiary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
-            // Edit button
-            IconButton(onClick = onEdit) {
-                Icon(
-                    Icons.Default.Edit,
-                    contentDescription = "Edit",
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-
-            // Remove button
-            IconButton(onClick = onRemove) {
-                Icon(
-                    Icons.Default.Close,
-                    contentDescription = "Remove",
-                    tint = MaterialTheme.colorScheme.error
-                )
-            }
+            // Quantity badge (matching DeductionQuantityBadge style)
+            AdditionQuantityBadge(
+                quantity = item.displayQuantity,
+                isRemoved = isRemoved,
+                isModified = item.isModified
+            )
         }
     }
 }
 
+/**
+ * Quantity badge for addition items. Shows quantity in a styled capsule.
+ */
 @Composable
-private fun EditPantryItemDialog(
-    item: PendingPantryItem,
-    onDismiss: () -> Unit,
-    onSave: (name: String, quantity: String) -> Unit
+private fun AdditionQuantityBadge(
+    quantity: String,
+    isRemoved: Boolean = false,
+    isModified: Boolean = false
 ) {
-    var name by remember { mutableStateOf(item.name) }
-    var quantity by remember { mutableStateOf(item.displayQuantity) }
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = when {
+            isRemoved -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            isModified -> MaterialTheme.colorScheme.secondaryContainer
+            else -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.8f)
+        }
+    ) {
+        Text(
+            text = if (isRemoved) "$quantity (Skipped)" else quantity,
+            style = MaterialTheme.typography.labelLarge,
+            color = when {
+                isRemoved -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                isModified -> MaterialTheme.colorScheme.onSecondaryContainer
+                else -> MaterialTheme.colorScheme.onTertiaryContainer
+            },
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+        )
+    }
+}
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Edit Item") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Item name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = quantity,
-                    onValueChange = { quantity = it },
-                    label = { Text("Quantity") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+/**
+ * Inline adjuster row for editing item name and quantity.
+ * Matches the DeductionAdjusterRow pattern.
+ * Close by tapping the active item card again.
+ */
+@Composable
+private fun AdditionAdjusterRow(
+    item: PendingPantryItem,
+    onSave: (name: String, quantity: String) -> Unit,
+    onToggleRemove: () -> Unit
+) {
+    var name by remember(item.name) { mutableStateOf(item.name) }
+    var quantity by remember(item.displayQuantity) { mutableStateOf(item.displayQuantity) }
 
-                // Show substitution warning if name differs
-                if (name != item.originalName && item.sources.isNotEmpty()) {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                        )
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Default.Info,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    "This will update the ingredient in:",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            item.sources.forEach { source ->
-                                Text(
-                                    text = "• ${source.recipeName}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                                )
-                            }
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            // Name field
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Item name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Quantity field
+            OutlinedTextField(
+                value = quantity,
+                onValueChange = { quantity = it },
+                label = { Text("Quantity") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // Show substitution warning if name differs from original
+            if (name != item.originalName && item.sources.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "This will update the ingredient in:",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        item.sources.forEach { source ->
+                            Text(
+                                text = "• ${source.recipeName}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
                         }
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onSave(name.trim(), quantity.trim()) },
-                enabled = name.isNotBlank() && quantity.isNotBlank()
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Action buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("Save")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                // Skip/Re-Add toggle button
+                OutlinedButton(
+                    onClick = onToggleRemove,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = if (item.isRemoved) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        }
+                    )
+                ) {
+                    Icon(
+                        if (item.isRemoved) Icons.Default.AddCircleOutline else Icons.Default.RemoveCircleOutline,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(if (item.isRemoved) "Re-Add" else "Skip")
+                }
+
+                // Save button
+                Button(
+                    onClick = { onSave(name.trim(), quantity.trim()) },
+                    modifier = Modifier.weight(1f),
+                    enabled = name.isNotBlank() && quantity.isNotBlank() && !item.isRemoved
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Save")
+                }
             }
         }
-    )
+    }
 }

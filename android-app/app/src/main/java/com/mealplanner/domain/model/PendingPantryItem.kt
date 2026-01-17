@@ -9,6 +9,7 @@ data class PendingPantryItem(
     val name: String,
     val displayQuantity: String,
     val isModified: Boolean = false,
+    val isRemoved: Boolean = false,  // Whether user skipped this item
     val originalName: String,
     val sources: List<IngredientSource>
 ) {

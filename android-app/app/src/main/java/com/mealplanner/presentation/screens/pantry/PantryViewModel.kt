@@ -45,16 +45,16 @@ class PantryViewModel @Inject constructor(
 
         val filtered = when (filter) {
             PantryFilter.ALL -> items
-            PantryFilter.CHECK_STOCK -> items.filter { it.needsStockCheck }
+            PantryFilter.USE_SOON -> items.filter { it.needsAttention }
             is PantryFilter.Category -> items.filter { it.category == filter.category }
         }
 
-        val checkStockCount = items.count { it.needsStockCheck }
+        val useSoonCount = items.count { it.needsAttention }
 
         _uiState.update {
             it.copy(
                 items = filtered.sortedBy { item -> item.name.lowercase() },
-                checkStockCount = checkStockCount
+                useSoonCount = useSoonCount
             )
         }
     }
@@ -142,19 +142,19 @@ data class PantryUiState(
     val items: List<PantryItem> = emptyList(),
     val selectedFilter: PantryFilter = PantryFilter.ALL,
     val expandedItemId: Long? = null,
-    val checkStockCount: Int = 0,
+    val useSoonCount: Int = 0,
     val showAddDialog: Boolean = false
 )
 
 sealed class PantryFilter {
     data object ALL : PantryFilter()
-    data object CHECK_STOCK : PantryFilter()
+    data object USE_SOON : PantryFilter()
     data class Category(val category: PantryCategory) : PantryFilter()
 }
 
 val allFilters: List<Pair<PantryFilter, String>> = listOf(
     PantryFilter.ALL to "All",
-    PantryFilter.CHECK_STOCK to "Check Stock",
+    PantryFilter.USE_SOON to "Use Soon",
     PantryFilter.Category(PantryCategory.PRODUCE) to "Produce",
     PantryFilter.Category(PantryCategory.PROTEIN) to "Protein",
     PantryFilter.Category(PantryCategory.DAIRY) to "Dairy",

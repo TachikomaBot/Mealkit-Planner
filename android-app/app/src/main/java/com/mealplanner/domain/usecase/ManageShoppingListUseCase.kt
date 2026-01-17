@@ -215,6 +215,7 @@ class ManageShoppingListUseCase @Inject constructor(
             "BUNCH" -> PantryUnit.BUNCH
             "PIECES" -> PantryUnit.UNITS
             "UNITS" -> PantryUnit.UNITS
+            "COUNT" -> PantryUnit.UNITS  // COUNT from AI maps to UNITS
             else -> PantryUnit.UNITS
         }
     }

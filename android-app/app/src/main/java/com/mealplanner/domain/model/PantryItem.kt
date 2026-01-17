@@ -78,21 +78,31 @@ data class PantryItem(
     val isLowStock: Boolean
         get() = percentRemaining < 0.2f
 
-    val needsStockCheck: Boolean
+    /**
+     * Whether this item needs attention - expiring soon, getting old, or partially used.
+     * Used for the "Use Soon" filter in the pantry.
+     */
+    val needsAttention: Boolean
         get() {
             if (!perishable) return false
 
             val now = LocalDateTime.now()
+            val today = LocalDate.now()
+            val oneDayAgo = now.minusDays(1)
             val threeDaysAgo = now.minusDays(3)
-            val threeDaysFromNow = LocalDate.now().plusDays(3)
+            val twoDaysFromNow = today.plusDays(2)
 
             // If checked within the last 3 days, skip
             if (lastStockCheck != null && lastStockCheck > threeDaysAgo) {
                 return false
             }
 
-            // Check if expiring within 3 days
-            if (expiryDate != null && !expiryDate.isAfter(threeDaysFromNow)) {
+            // Grace period: don't flag items added today or yesterday for expiry
+            val isNewlyPurchased = dateAdded > oneDayAgo
+
+            // Check if expiring within 2 days (more urgent threshold)
+            // But give newly purchased items a pass - user just bought them
+            if (expiryDate != null && !expiryDate.isAfter(twoDaysFromNow) && !isNewlyPurchased) {
                 return true
             }
 
@@ -101,13 +111,17 @@ data class PantryItem(
                 return true
             }
 
-            // Check if partially consumed
+            // Check if partially consumed (should use the rest)
             if (quantityRemaining < quantityInitial) {
                 return true
             }
 
             return false
         }
+
+    // Keep old name for backwards compatibility during transition
+    @Deprecated("Use needsAttention instead", ReplaceWith("needsAttention"))
+    val needsStockCheck: Boolean get() = needsAttention
 
     /**
      * Get the effective stock level, computed from quantity for PRECISE/COUNT items
@@ -124,8 +138,11 @@ data class PantryItem(
     val availabilityDescription: String
         get() = when (trackingStyle) {
             TrackingStyle.STOCK_LEVEL -> stockLevel.displayName
-            TrackingStyle.COUNT -> "${quantityRemaining.toInt()} ${unit.displayName}"
-            TrackingStyle.PRECISE -> "${quantityRemaining.toInt()}${unit.displayName}"
+            TrackingStyle.COUNT, TrackingStyle.PRECISE -> {
+                val qty = quantityRemaining.toInt()
+                val unitStr = unit.pluralize(qty)
+                "$qty $unitStr"
+            }
         }
 
     companion object {
@@ -191,16 +208,26 @@ data class PantryItem(
     }
 }
 
-enum class PantryUnit(val displayName: String) {
-    GRAMS("g"),
-    MILLILITERS("ml"),
-    UNITS("units"),
-    BUNCH("bunch");
+enum class PantryUnit(val displayName: String, val pluralName: String) {
+    GRAMS("g", "g"),                    // Already abbreviated, no change
+    MILLILITERS("ml", "ml"),            // Already abbreviated, no change
+    UNITS("unit", "units"),
+    BUNCH("bunch", "bunches");
+
+    /**
+     * Get the appropriate singular or plural form based on quantity
+     */
+    fun pluralize(quantity: Int): String {
+        return if (quantity == 1) displayName else pluralName
+    }
 
     companion object {
         fun fromString(value: String): PantryUnit {
-            return entries.find { it.name.equals(value, ignoreCase = true) || it.displayName == value }
-                ?: UNITS
+            return entries.find {
+                it.name.equals(value, ignoreCase = true) ||
+                it.displayName == value ||
+                it.pluralName == value
+            } ?: UNITS
         }
     }
 }

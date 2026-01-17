@@ -91,14 +91,14 @@ fun PantryScreen(
             // Filter carousel
             FilterCarousel(
                 selectedFilter = uiState.selectedFilter,
-                checkStockCount = uiState.checkStockCount,
+                useSoonCount = uiState.useSoonCount,
                 onFilterSelected = { viewModel.setFilter(it) }
             )
 
             // Content
             if (uiState.items.isEmpty()) {
                 EmptyPantryContent(
-                    isCheckStock = uiState.selectedFilter == PantryFilter.CHECK_STOCK,
+                    isUseSoon = uiState.selectedFilter == PantryFilter.USE_SOON,
                     onAddItem = { viewModel.showAddDialog() }
                 )
             } else {
@@ -137,7 +137,7 @@ fun PantryScreen(
 @Composable
 private fun FilterCarousel(
     selectedFilter: PantryFilter,
-    checkStockCount: Int,
+    useSoonCount: Int,
     onFilterSelected: (PantryFilter) -> Unit
 ) {
     LazyRow(
@@ -146,7 +146,7 @@ private fun FilterCarousel(
     ) {
         items(allFilters) { (filter, label) ->
             val isSelected = selectedFilter == filter
-            val isCheckStock = filter == PantryFilter.CHECK_STOCK
+            val isUseSoon = filter == PantryFilter.USE_SOON
 
             FilterChip(
                 selected = isSelected,
@@ -154,7 +154,7 @@ private fun FilterCarousel(
                 label = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(label)
-                        if (isCheckStock && checkStockCount > 0) {
+                        if (isUseSoon && useSoonCount > 0) {
                             Spacer(modifier = Modifier.width(4.dp))
                             Badge(
                                 containerColor = if (isSelected) {
@@ -164,7 +164,7 @@ private fun FilterCarousel(
                                 }
                             ) {
                                 Text(
-                                    checkStockCount.toString(),
+                                    useSoonCount.toString(),
                                     color = if (isSelected) {
                                         MaterialTheme.colorScheme.onPrimary
                                     } else {
@@ -186,7 +186,7 @@ private fun FilterCarousel(
 
 @Composable
 private fun EmptyPantryContent(
-    isCheckStock: Boolean,
+    isUseSoon: Boolean,
     onAddItem: () -> Unit
 ) {
     Column(
@@ -196,7 +196,7 @@ private fun EmptyPantryContent(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        if (isCheckStock) {
+        if (isUseSoon) {
             Box(
                 modifier = Modifier
                     .size(80.dp)
@@ -449,7 +449,46 @@ private fun IngredientCard(
                     )
                 }
 
-                // Low stock indicator
+                // Expiry date indicator (top left)
+                item.expiryDate?.let { expiry ->
+                    val today = java.time.LocalDate.now()
+                    val daysUntilExpiry = java.time.temporal.ChronoUnit.DAYS.between(today, expiry).toInt()
+                    val isExpiringSoon = daysUntilExpiry <= 3
+                    val isExpired = daysUntilExpiry < 0
+
+                    val expiryText = when {
+                        isExpired -> "Expired"
+                        daysUntilExpiry == 0 -> "Today"
+                        daysUntilExpiry == 1 -> "Tomorrow"
+                        daysUntilExpiry <= 7 -> "${daysUntilExpiry}d"
+                        else -> expiry.format(java.time.format.DateTimeFormatter.ofPattern("MMM d"))
+                    }
+
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(8.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = when {
+                            isExpired -> MaterialTheme.colorScheme.error
+                            isExpiringSoon -> MaterialTheme.colorScheme.errorContainer
+                            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
+                        }
+                    ) {
+                        Text(
+                            text = expiryText,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = when {
+                                isExpired -> MaterialTheme.colorScheme.onError
+                                isExpiringSoon -> MaterialTheme.colorScheme.onErrorContainer
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
+                }
+
+                // Low stock indicator (top right)
                 if (isLow) {
                     Surface(
                         modifier = Modifier
@@ -556,23 +595,6 @@ private fun AdjusterRow(
                 Column(
                     modifier = Modifier.padding(16.dp)
                 ) {
-                    // Header
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = item.name,
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        IconButton(onClick = onClose) {
-                            Icon(Icons.Default.Close, contentDescription = "Close")
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
                     // Different UI based on tracking style
                     when (item.trackingStyle) {
                         TrackingStyle.STOCK_LEVEL -> {

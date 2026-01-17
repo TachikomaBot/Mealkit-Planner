@@ -1420,6 +1420,14 @@ TRACKING STYLE:
 - "PRECISE" with stockLevel=null for: produce, proteins, dairy, frozen
 - For EGGS: use "PRECISE" with unit="COUNT" - convert cartons to individual eggs (1 carton = 12 eggs)
 
+QUANTITY/UNIT - IMPORTANT for portioned items:
+- When an item has BOTH a count and weight (e.g. "2 chicken breasts (450g)"), PREFER THE COUNT:
+  - "2 chicken breasts (450g)" → quantity: 2, unit: "COUNT" (NOT 450 GRAMS)
+  - "4 pork chops (600g)" → quantity: 4, unit: "COUNT" (NOT 600 GRAMS)
+  - "6 salmon fillets" → quantity: 6, unit: "COUNT"
+- Use COUNT for: individual pieces (breasts, chops, fillets, steaks, thighs, drumsticks, sausages)
+- Use GRAMS for: ground/minced meat, bulk items without piece count, or when only weight is given
+
 EXPIRY DAYS - Set based on category:
 - Fresh herbs (basil, parsley, chives, cilantro): 4
 - Other produce: 7
@@ -1437,11 +1445,11 @@ PERISHABLE: true for PRODUCE, PROTEIN, DAIRY, FROZEN. false otherwise.
 EXAMPLE OUTPUT:
 {
   "items": [
-    {"id": 1, "name": "Salmon Fillets", "quantity": 450, "unit": "GRAMS", "category": "PROTEIN", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": 3, "perishable": true},
-    {"id": 2, "name": "Fresh Basil", "quantity": 1, "unit": "BUNCH", "category": "PRODUCE", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": 4, "perishable": true},
-    {"id": 3, "name": "Olive Oil", "quantity": 500, "unit": "MILLILITERS", "category": "OILS", "trackingStyle": "STOCK_LEVEL", "stockLevel": "FULL", "expiryDays": null, "perishable": false},
-    {"id": 4, "name": "Frozen Peas", "quantity": 500, "unit": "GRAMS", "category": "FROZEN", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": null, "perishable": true},
-    {"id": 5, "name": "Fresh Mozzarella", "quantity": 250, "unit": "GRAMS", "category": "DAIRY", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": 10, "perishable": true},
+    {"id": 1, "name": "Salmon Fillets", "quantity": 2, "unit": "COUNT", "category": "PROTEIN", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": 3, "perishable": true},
+    {"id": 2, "name": "Chicken Breasts", "quantity": 4, "unit": "COUNT", "category": "PROTEIN", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": 4, "perishable": true},
+    {"id": 3, "name": "Fresh Basil", "quantity": 1, "unit": "BUNCH", "category": "PRODUCE", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": 4, "perishable": true},
+    {"id": 4, "name": "Olive Oil", "quantity": 500, "unit": "MILLILITERS", "category": "OILS", "trackingStyle": "STOCK_LEVEL", "stockLevel": "FULL", "expiryDays": null, "perishable": false},
+    {"id": 5, "name": "Ground Beef", "quantity": 500, "unit": "GRAMS", "category": "PROTEIN", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": 5, "perishable": true},
     {"id": 6, "name": "Eggs", "quantity": 12, "unit": "COUNT", "category": "PROTEIN", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": 21, "perishable": true}
   ]
 }
