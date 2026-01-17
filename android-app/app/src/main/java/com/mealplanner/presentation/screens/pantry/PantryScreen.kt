@@ -6,6 +6,8 @@ import com.mealplanner.presentation.theme.Mustard700
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -35,6 +37,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mealplanner.domain.model.PantryCategory
 import com.mealplanner.domain.model.PantryItem
@@ -666,6 +669,9 @@ private fun CountAdjuster(
     currentCount: Double,
     onCountChange: (Double) -> Unit
 ) {
+    // Increment based on quantity magnitude
+    val increment = getIncrement(currentCount, item.quantityInitial)
+
     Column {
         // Count display with +/- buttons
         Row(
@@ -673,36 +679,42 @@ private fun CountAdjuster(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            FilledIconButton(
-                onClick = { if (currentCount > 0) onCountChange(currentCount - 1) },
-                enabled = currentCount > 0
+            RepeatingIconButton(
+                onClick = {
+                    val newCount = (currentCount - getIncrement(currentCount, item.quantityInitial)).coerceAtLeast(0.0)
+                    onCountChange(newCount)
+                },
+                enabled = currentCount > 0,
+                delayMillis = getRepeatDelay(currentCount)
             ) {
                 Icon(Icons.Default.Remove, contentDescription = "Decrease")
             }
 
             Spacer(modifier = Modifier.width(24.dp))
 
-            Text(
-                text = currentCount.toInt().toString(),
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = item.unit.displayName,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = formatQuantity(currentCount),
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = item.unit.displayName,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             Spacer(modifier = Modifier.width(24.dp))
 
-            FilledIconButton(
-                onClick = { onCountChange(currentCount + 1) }
+            RepeatingIconButton(
+                onClick = { onCountChange(currentCount + getIncrement(currentCount, item.quantityInitial)) },
+                enabled = true,
+                delayMillis = getRepeatDelay(currentCount)
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Increase")
             }
         }
-
     }
 }
 
@@ -712,60 +724,73 @@ private fun PreciseAdjuster(
     currentQuantity: Double,
     onQuantityChange: (Double) -> Unit
 ) {
-    val percentRemaining = (currentQuantity.toFloat() / item.quantityInitial.toFloat()).coerceIn(0f, 1f)
+    // Use 0.5 increment for small quantities, 1.0 for larger ones
+    val increment = if (currentQuantity < 5 || item.quantityInitial < 5) 0.5 else 1.0
+    // Repeat delay based on quantity magnitude
+    val repeatDelay = getRepeatDelay(currentQuantity)
 
     Column {
-        // Quantity display
+        // Quantity display with +/- buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.Bottom
-        ) {
-            Text(
-                text = currentQuantity.toInt().toString(),
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = item.unit.displayName,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "(${(percentRemaining * 100).toInt()}% remaining)",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Slider
-        Row(
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "0",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Slider(
-                value = currentQuantity.toFloat(),
-                onValueChange = { onQuantityChange(it.toDouble()) },
-                valueRange = 0f..item.quantityInitial.toFloat(),
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 8.dp)
-            )
-            Text(
-                text = item.quantityInitial.toInt().toString(),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            RepeatingIconButton(
+                onClick = {
+                    val newQty = (currentQuantity - increment).coerceAtLeast(0.0)
+                    onQuantityChange(newQty)
+                },
+                enabled = currentQuantity > 0,
+                delayMillis = repeatDelay
+            ) {
+                Icon(Icons.Default.Remove, contentDescription = "Decrease")
+            }
+
+            Spacer(modifier = Modifier.width(24.dp))
+
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = formatQuantity(currentQuantity),
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = item.unit.displayName,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(modifier = Modifier.width(24.dp))
+
+            RepeatingIconButton(
+                onClick = { onQuantityChange(currentQuantity + increment) },
+                delayMillis = repeatDelay
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Increase")
+            }
         }
 
+        // Show initial quantity reference
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Started with: ${formatQuantity(item.quantityInitial)} ${item.unit.displayName}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.align(Alignment.CenterHorizontally)
+        )
+    }
+}
+
+/**
+ * Format a quantity for display, showing decimals only when needed.
+ */
+private fun formatQuantity(value: Double): String {
+    return if (value == value.toLong().toDouble()) {
+        value.toLong().toString()
+    } else {
+        String.format("%.1f", value).trimEnd('0').trimEnd('.')
     }
 }
 
@@ -966,5 +991,81 @@ private fun getCategoryEmoji(category: PantryCategory): String {
         PantryCategory.CONDIMENT -> "\uD83E\uDED9"
         PantryCategory.FROZEN -> "\uD83E\uDDCA"
         PantryCategory.OTHER -> "\uD83D\uDCE6"
+    }
+}
+
+/**
+ * Determine the increment step size based on the current quantity.
+ * Single digits: 1, double digits: 5, triple digits: 10, larger: 25
+ */
+private fun getIncrement(currentQuantity: Double, initialQuantity: Double): Double {
+    val referenceQty = maxOf(currentQuantity, initialQuantity)
+    return when {
+        referenceQty < 10 -> 1.0
+        referenceQty < 100 -> 5.0
+        referenceQty < 500 -> 10.0
+        else -> 25.0
+    }
+}
+
+/**
+ * Determine the repeat delay based on the current quantity.
+ * Smaller quantities get slower repeat (more precision needed),
+ * larger quantities get faster repeat.
+ */
+private fun getRepeatDelay(currentQuantity: Double): Long {
+    return when {
+        currentQuantity < 10 -> 200L
+        currentQuantity < 100 -> 150L
+        currentQuantity < 500 -> 100L
+        else -> 75L
+    }
+}
+
+/**
+ * An icon button that triggers repeatedly when held down.
+ * First triggers immediately on press, then after an initial delay,
+ * starts repeating at the specified interval.
+ */
+@Composable
+private fun RepeatingIconButton(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    delayMillis: Long = 150L,
+    initialDelayMillis: Long = 400L,
+    content: @Composable () -> Unit
+) {
+    val currentOnClick by rememberUpdatedState(onClick)
+    val interactionSource = remember { MutableInteractionSource() }
+    var pressed by remember { mutableStateOf(false) }
+
+    // Track press state via InteractionSource (works inside SwipeToDismissBox)
+    LaunchedEffect(interactionSource) {
+        interactionSource.interactions.collect { interaction ->
+            when (interaction) {
+                is PressInteraction.Press -> pressed = true
+                is PressInteraction.Release, is PressInteraction.Cancel -> pressed = false
+            }
+        }
+    }
+
+    // Handle repeat while pressed
+    LaunchedEffect(pressed) {
+        if (pressed && enabled) {
+            currentOnClick()  // Immediate action on press
+            delay(initialDelayMillis)
+            while (pressed) {
+                currentOnClick()
+                delay(delayMillis)
+            }
+        }
+    }
+
+    FilledIconButton(
+        onClick = { },  // Empty - we handle via InteractionSource
+        enabled = enabled,
+        interactionSource = interactionSource
+    ) {
+        content()
     }
 }

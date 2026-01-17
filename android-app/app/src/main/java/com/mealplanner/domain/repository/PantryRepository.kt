@@ -2,6 +2,7 @@ package com.mealplanner.domain.repository
 
 import com.mealplanner.domain.model.PantryCategory
 import com.mealplanner.domain.model.PantryItem
+import com.mealplanner.domain.model.StockLevel
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -73,6 +74,19 @@ interface PantryRepository {
      * Deduct quantity from an item by name (for recipe cooking)
      */
     suspend fun deductByName(ingredientName: String, amount: Double): Boolean
+
+    /**
+     * Reduce stock level by one notch for STOCK_LEVEL tracked items.
+     * PLENTY → SOME → LOW → OUT_OF_STOCK
+     * @return true if the level was reduced, false if already at minimum or item not found
+     */
+    suspend fun reduceStockLevel(itemId: Long): Boolean
+
+    /**
+     * Set stock level directly for STOCK_LEVEL tracked items.
+     * @return true if the level was updated, false if item not found
+     */
+    suspend fun setStockLevel(itemId: Long, level: StockLevel): Boolean
 
     /**
      * Delete an item from the pantry

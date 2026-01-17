@@ -3,9 +3,12 @@ package com.mealplanner.presentation.screens.recipe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mealplanner.domain.model.PantryItem
+import com.mealplanner.domain.model.PendingDeductionItem
 import com.mealplanner.domain.model.PlannedRecipe
 import com.mealplanner.domain.model.Recipe
 import com.mealplanner.domain.model.RecipeHistory
+import com.mealplanner.domain.model.StockLevel
+import com.mealplanner.domain.model.TrackingStyle
 import com.mealplanner.domain.repository.MealPlanRepository
 import com.mealplanner.domain.repository.PantryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,6 +27,10 @@ class RecipeDetailViewModel @Inject constructor(
 
     private val _pantryItems = MutableStateFlow<List<PantryItem>>(emptyList())
     val pantryItems: StateFlow<List<PantryItem>> = _pantryItems.asStateFlow()
+
+    // UI state for deduction confirmation flow
+    private val _uiState = MutableStateFlow<RecipeDetailUiState>(RecipeDetailUiState.ViewingRecipe)
+    val uiState: StateFlow<RecipeDetailUiState> = _uiState.asStateFlow()
 
     private val _recipeHistory = MutableStateFlow<RecipeHistory?>(null)
     val recipeHistory: StateFlow<RecipeHistory?> = _recipeHistory.asStateFlow()
@@ -137,6 +144,168 @@ class RecipeDetailViewModel @Inject constructor(
         saveRating()
     }
 
+    // ========== Deduction Confirmation Flow ==========
+
+    /**
+     * Start the deduction confirmation flow.
+     * Builds a list of pending deductions from the recipe's ingredients,
+     * matched against pantry items.
+     */
+    fun startDeductionConfirmation(recipe: Recipe) {
+        viewModelScope.launch {
+            val pantryItems = _pantryItems.value
+
+            // Convert recipe ingredients to pending deduction items
+            val pendingItems = recipe.ingredients.mapIndexed { index, ingredient ->
+                val pantryMatch = findPantryMatch(ingredient.name, pantryItems)
+
+                PendingDeductionItem(
+                    id = index.toLong(),
+                    ingredientName = ingredient.name,
+                    originalQuantity = ingredient.quantity,
+                    editedQuantity = ingredient.quantity,
+                    unit = ingredient.unit,
+                    isRemoved = false,
+                    pantryItemId = pantryMatch?.id,
+                    pantryItemName = pantryMatch?.name,
+                    trackingStyle = pantryMatch?.trackingStyle,
+                    currentStockLevel = pantryMatch?.stockLevel
+                    // shouldReduceLevel defaults to false
+                )
+            }
+
+            _uiState.value = RecipeDetailUiState.ConfirmingDeduction(
+                recipe = recipe,
+                items = pendingItems
+            )
+        }
+    }
+
+    /**
+     * Find a matching pantry item using fuzzy matching.
+     * Handles variations like "garlic cloves" matching "garlic".
+     */
+    private fun findPantryMatch(ingredientName: String, pantryItems: List<PantryItem>): PantryItem? {
+        val normalizedName = ingredientName.lowercase().trim()
+
+        // Try exact match first
+        pantryItems.find { it.name.lowercase() == normalizedName }?.let { return it }
+
+        // Try contains match
+        pantryItems.find {
+            it.name.lowercase().contains(normalizedName) ||
+            normalizedName.contains(it.name.lowercase())
+        }?.let { return it }
+
+        // Try matching significant words (e.g., "garlic cloves" -> "garlic")
+        val words = normalizedName.split(" ").filter { it.length > 3 }
+        for (word in words) {
+            pantryItems.find { it.name.lowercase().contains(word) }?.let { return it }
+        }
+
+        return null
+    }
+
+    /**
+     * Update the quantity for a COUNT/PRECISE item.
+     * Panel stays open for further adjustments.
+     * Auto-restores skipped items when quantity is adjusted.
+     */
+    fun updateDeductionQuantity(itemId: Long, newQuantity: Double) {
+        val current = _uiState.value
+        if (current is RecipeDetailUiState.ConfirmingDeduction) {
+            val updatedItems = current.items.map { item ->
+                if (item.id == itemId) {
+                    // Auto-restore if item was skipped and user adjusts quantity
+                    item.copy(editedQuantity = newQuantity, isRemoved = false)
+                } else item
+            }
+            _uiState.value = current.copy(items = updatedItems)
+        }
+    }
+
+    /**
+     * Set the target stock level for a STOCK_LEVEL item.
+     * Panel stays open for further adjustments.
+     * Auto-restores skipped items when level is adjusted.
+     */
+    fun setTargetStockLevel(itemId: Long, level: StockLevel) {
+        val current = _uiState.value
+        if (current is RecipeDetailUiState.ConfirmingDeduction) {
+            val updatedItems = current.items.map { item ->
+                if (item.id == itemId) {
+                    // Auto-restore if item was skipped and user adjusts level
+                    item.copy(targetStockLevel = level, isRemoved = false)
+                } else item
+            }
+            _uiState.value = current.copy(items = updatedItems)
+        }
+    }
+
+    /**
+     * Skip an item from deduction (mark as skipped).
+     * Closes the adjuster panel after skipping.
+     */
+    fun skipDeductionItem(itemId: Long) {
+        val current = _uiState.value
+        if (current is RecipeDetailUiState.ConfirmingDeduction) {
+            val updatedItems = current.items.map { item ->
+                if (item.id == itemId) item.copy(isRemoved = true)
+                else item
+            }
+            _uiState.value = current.copy(items = updatedItems, editingItemId = null)
+        }
+    }
+
+    /**
+     * Set which item is currently being edited in the dialog.
+     */
+    fun setEditingDeductionItem(itemId: Long?) {
+        val current = _uiState.value
+        if (current is RecipeDetailUiState.ConfirmingDeduction) {
+            _uiState.value = current.copy(editingItemId = itemId)
+        }
+    }
+
+    /**
+     * Confirm and execute the deductions.
+     */
+    fun confirmDeductions() {
+        val current = _uiState.value
+        if (current is RecipeDetailUiState.ConfirmingDeduction) {
+            viewModelScope.launch {
+                _uiState.value = RecipeDetailUiState.ProcessingDeduction
+
+                // Deduct each non-removed item from pantry
+                val itemsToDeduct = current.items.filter { !it.isRemoved && it.hasPantryMatch }
+                for (item in itemsToDeduct) {
+                    if (item.isStockLevelItem) {
+                        // For stock level items, set the target level if changed
+                        if (item.hasStockLevelChange && item.pantryItemId != null && item.targetStockLevel != null) {
+                            pantryRepository.setStockLevel(item.pantryItemId, item.targetStockLevel)
+                        }
+                    } else {
+                        // For count/precise items, deduct the quantity
+                        pantryRepository.deductByName(item.ingredientName, item.editedQuantity)
+                    }
+                }
+
+                // Mark recipe as cooked
+                markAsCooked(current.recipe)
+
+                // Return to viewing state
+                _uiState.value = RecipeDetailUiState.ViewingRecipe
+            }
+        }
+    }
+
+    /**
+     * Cancel the deduction confirmation and return to viewing.
+     */
+    fun cancelDeduction() {
+        _uiState.value = RecipeDetailUiState.ViewingRecipe
+    }
+
     private fun saveRating() {
         val historyId = currentHistoryId ?: return
         viewModelScope.launch {
@@ -165,4 +334,22 @@ enum class IngredientStatus {
     LOW_STOCK,
     EXPIRING_SOON,
     NOT_IN_PANTRY
+}
+
+/**
+ * UI state for the recipe detail screen.
+ */
+sealed class RecipeDetailUiState {
+    /** Normal recipe viewing mode */
+    data object ViewingRecipe : RecipeDetailUiState()
+
+    /** Confirming which ingredients to deduct from pantry */
+    data class ConfirmingDeduction(
+        val recipe: Recipe,
+        val items: List<PendingDeductionItem>,
+        val editingItemId: Long? = null
+    ) : RecipeDetailUiState()
+
+    /** Processing the deductions */
+    data object ProcessingDeduction : RecipeDetailUiState()
 }

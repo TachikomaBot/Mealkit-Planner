@@ -218,16 +218,36 @@ MealPlanScreen
 
 ### Cooking → Pantry Deduction
 
-When a recipe is marked as "Cooked":
+When a recipe is marked as "Cooked" via "I Made This!":
 
 ```
 RecipeDetailScreen
-    └─> RecipeDetailViewModel.markCooked()
-        └─> For each ingredient:
-            └─> PantryRepository.deductByName(name, amount)
-        └─> MealPlanRepository.markRecipeCooked()
-        └─> RecipeHistoryRepository.recordCooking()
+    └─> User taps "I Made This!" button
+    └─> RecipeDetailViewModel.startDeductionConfirmation(recipe)
+        └─> Matches recipe ingredients to pantry items (fuzzy matching)
+        └─> Creates PendingDeductionItem list with tracking style info
+        └─> Shows DeductionConfirmationScreen
+            │
+            ├─> For STOCK_LEVEL items (spices, oils, condiments):
+            │   └─> 4-button selector: Out / Low / Some / Plenty
+            │   └─> Defaults to no change, user can adjust level
+            │
+            ├─> For COUNT/PRECISE items (produce, proteins, cans):
+            │   └─> +/- buttons with half-unit support (0.5 increments)
+            │   └─> Shows "Used: X | Unused: Y" badge
+            │   └─> Long-press minus to skip item
+            │
+            └─> User confirms deductions
+                └─> RecipeDetailViewModel.confirmDeductions()
+                    ├─> PantryRepository.setStockLevel() for STOCK_LEVEL items
+                    ├─> PantryRepository.deductByName() for COUNT/PRECISE items
+                    └─> markAsCooked() records history for rating
 ```
+
+**Key files:**
+- `PendingDeductionItem.kt` - Data model for pending deductions with tracking style support
+- `RecipeDetailViewModel.kt` - Deduction confirmation flow logic
+- `RecipeDetailScreen.kt` - Confirmation UI with adjustable deduction cards
 
 ### Test Mode
 
@@ -259,10 +279,16 @@ See [NATIVE_KOTLIN_PROGRESS.md](NATIVE_KOTLIN_PROGRESS.md) for detailed progress
 - AI-powered ingredient substitution (updates recipes intelligently)
 - Recipe rating and history
 - Test Mode for data isolation during development
+- Cooking → Pantry deduction flow with confirmation screen
+  - Different UI for STOCK_LEVEL items (4-button level selector) vs COUNT/PRECISE items (+/- buttons)
+  - Half-unit support for quantities (0.5 increments)
+  - "Used: X | Unused: Y" badge display
+  - Long-press minus to skip items, auto-restore on adjustment
+- Pantry adjusters with hold-to-repeat +/- buttons (speed scales with quantity magnitude)
 
 **In Progress (see Todo.md):**
-- Cooking → Pantry deduction flow (with confirmation screen)
 - Recipe units refinement
+- Stock level tracking improvements
 
 ---
 

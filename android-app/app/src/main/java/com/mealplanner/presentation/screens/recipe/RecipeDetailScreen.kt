@@ -1,12 +1,16 @@
 package com.mealplanner.presentation.screens.recipe
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -25,8 +29,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.mealplanner.domain.model.CookingStep
+import com.mealplanner.domain.model.PendingDeductionItem
 import com.mealplanner.domain.model.Recipe
 import com.mealplanner.domain.model.RecipeIngredient
+import com.mealplanner.domain.model.StockLevel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,6 +41,7 @@ fun RecipeDetailScreen(
     onBack: () -> Unit,
     viewModel: RecipeDetailViewModel = hiltViewModel()
 ) {
+    val uiState by viewModel.uiState.collectAsState()
     val rating by viewModel.rating.collectAsState()
     val recipeHistory by viewModel.recipeHistory.collectAsState()
     val plannedRecipe by viewModel.plannedRecipe.collectAsState()
@@ -44,6 +51,49 @@ fun RecipeDetailScreen(
         viewModel.loadRecipeData(recipe.name)
     }
 
+    // Switch between viewing and confirming deduction
+    when (val state = uiState) {
+        is RecipeDetailUiState.ViewingRecipe -> {
+            RecipeDetailContent(
+                recipe = recipe,
+                rating = rating,
+                recipeHistory = recipeHistory,
+                plannedRecipe = plannedRecipe,
+                viewModel = viewModel,
+                onBack = onBack,
+                onIMadeThis = { viewModel.startDeductionConfirmation(recipe) }
+            )
+        }
+        is RecipeDetailUiState.ConfirmingDeduction -> {
+            DeductionConfirmationScreen(
+                recipe = state.recipe,
+                items = state.items,
+                editingItemId = state.editingItemId,
+                onEditItem = { itemId -> viewModel.setEditingDeductionItem(itemId) },
+                onUpdateQuantity = { id, qty -> viewModel.updateDeductionQuantity(id, qty) },
+                onSetStockLevel = { id, level -> viewModel.setTargetStockLevel(id, level) },
+                onSkipItem = { viewModel.skipDeductionItem(it) },
+                onConfirm = { viewModel.confirmDeductions() },
+                onCancel = { viewModel.cancelDeduction() }
+            )
+        }
+        is RecipeDetailUiState.ProcessingDeduction -> {
+            DeductionProcessingScreen()
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecipeDetailContent(
+    recipe: Recipe,
+    rating: Int?,
+    recipeHistory: com.mealplanner.domain.model.RecipeHistory?,
+    plannedRecipe: com.mealplanner.domain.model.PlannedRecipe?,
+    viewModel: RecipeDetailViewModel,
+    onBack: () -> Unit,
+    onIMadeThis: () -> Unit
+) {
     // Determine if we should show the "I Made This" button
     val isInMealPlan = plannedRecipe != null
     val isCooked = plannedRecipe?.cooked == true || recipeHistory != null
@@ -289,7 +339,7 @@ fun RecipeDetailScreen(
             if (isInMealPlan && !isCooked) {
                 item {
                     IMadeThisButton(
-                        onMarkCooked = { viewModel.markAsCooked(recipe) }
+                        onMarkCooked = onIMadeThis
                     )
                 }
             }
@@ -616,6 +666,610 @@ private fun CookingStepItem(
                     }
                 }
             }
+        }
+    }
+}
+
+// ========== Deduction Confirmation Screen ==========
+
+@Composable
+private fun DeductionConfirmationScreen(
+    recipe: Recipe,
+    items: List<PendingDeductionItem>,
+    editingItemId: Long?,
+    onEditItem: (Long?) -> Unit,
+    onUpdateQuantity: (Long, Double) -> Unit,
+    onSetStockLevel: (Long, StockLevel) -> Unit,
+    onSkipItem: (Long) -> Unit,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val activeItems = items.filter { !it.isRemoved }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Header
+        Surface(
+            color = MaterialTheme.colorScheme.primaryContainer,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .statusBarsPadding()
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Kitchen,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Deduct from Pantry",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Text(
+                            text = "Review ingredients used in ${recipe.name}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Items list (all items, including skipped ones which appear greyed out)
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(items.size, key = { items[it].id }) { index ->
+                val item = items[index]
+                val isEditing = editingItemId == item.id
+
+                // Item card - clicking opens/switches to this item's adjuster
+                DeductionItemCard(
+                    item = item,
+                    onClick = { onEditItem(item.id) }
+                )
+
+                // Adjuster modal (shown when editing this item)
+                if (isEditing) {
+                    DeductionAdjusterRow(
+                        item = item,
+                        onQuantityChange = { newQty -> onUpdateQuantity(item.id, newQty) },
+                        onStockLevelChange = { level -> onSetStockLevel(item.id, level) },
+                        onSkip = { onSkipItem(item.id) },
+                        onClose = { onEditItem(null) }
+                    )
+                }
+            }
+        }
+
+        // Bottom action buttons
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shadowElevation = 8.dp
+        ) {
+            Row(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .navigationBarsPadding()
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onCancel,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Cancel")
+                }
+                Button(
+                    onClick = onConfirm,
+                    modifier = Modifier.weight(1f),
+                    enabled = activeItems.isNotEmpty()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Confirm (${activeItems.count { it.hasPantryMatch }})")
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Unified item card for the deduction confirmation screen.
+ * Shows item info with quantity badge. Entire row is clickable to open adjuster.
+ * Skipped items are greyed out but remain in the list.
+ */
+@Composable
+private fun DeductionItemCard(
+    item: PendingDeductionItem,
+    onClick: () -> Unit
+) {
+    val isSkipped = item.isRemoved
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = when {
+                isSkipped -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                item.isModified -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                else -> MaterialTheme.colorScheme.surface
+            }
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(12.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Pantry match indicator
+            PantryMatchIndicator(hasPantryMatch = item.hasPantryMatch)
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Item info
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.ingredientName,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (isSkipped) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                           else MaterialTheme.colorScheme.onSurface
+                )
+                // Additional info
+                if (!item.hasPantryMatch) {
+                    Text(
+                        text = "Not in pantry",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                } else if (item.pantryItemName != null && item.pantryItemName != item.ingredientName) {
+                    Text(
+                        text = "Matched: ${item.pantryItemName}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isSkipped) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                               else MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                    )
+                }
+            }
+
+            // Quantity/Stock level badge (orange rounded rectangle)
+            if (item.isStockLevelItem) {
+                StockLevelChangeBadge(
+                    currentLevel = item.currentStockLevel,
+                    targetLevel = item.targetStockLevel,
+                    isSkipped = isSkipped
+                )
+            } else {
+                DeductionQuantityBadge(
+                    originalQuantity = item.originalQuantity,
+                    usedQuantity = item.editedQuantity,
+                    unit = item.unit,
+                    isSkipped = isSkipped
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Orange badge showing "Used: X | Unused: Y" or "(Skipped)" for quantity items.
+ */
+@Composable
+private fun DeductionQuantityBadge(
+    originalQuantity: Double,
+    usedQuantity: Double,
+    unit: String,
+    isSkipped: Boolean = false
+) {
+    val unusedQuantity = originalQuantity - usedQuantity
+
+    if (isSkipped) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        ) {
+            Text(
+                text = "${formatQuantity(originalQuantity)} $unit (Skipped)".trim(),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+        }
+    } else {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // "Used: X" capsule
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.8f)
+            ) {
+                Text(
+                    text = "Used: ${formatQuantity(usedQuantity)}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                )
+            }
+            // "Unused: Y" capsule (show em dash when 0)
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            ) {
+                Text(
+                    text = if (unusedQuantity <= 0) "Unused: —" else "Unused: ${formatQuantity(unusedQuantity)}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Badge showing stock level change for stock level items
+ */
+@Composable
+private fun StockLevelChangeBadge(
+    currentLevel: StockLevel?,
+    targetLevel: StockLevel?,
+    isSkipped: Boolean = false
+) {
+    val displayLevel = targetLevel ?: currentLevel
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = if (isSkipped) {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        } else {
+            MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.8f)
+        }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (isSkipped) {
+                Text(
+                    text = "${displayLevel?.displayName ?: "?"} (Skipped)",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+            } else if (targetLevel != null && targetLevel != currentLevel) {
+                Text(
+                    text = "${currentLevel?.displayName ?: "?"} → ${targetLevel.displayName}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+            } else {
+                Text(
+                    text = displayLevel?.displayName ?: "?",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Modal-style adjuster row similar to the Pantry tab's AdjusterRow.
+ * Handles both stock level items (4 buttons) and quantity items (+/- buttons).
+ */
+@Composable
+private fun DeductionAdjusterRow(
+    item: PendingDeductionItem,
+    onQuantityChange: (Double) -> Unit,
+    onStockLevelChange: (StockLevel) -> Unit,
+    onSkip: () -> Unit,
+    onClose: () -> Unit
+) {
+    // Local state for editing
+    var currentQuantity by remember(item.editedQuantity) { mutableDoubleStateOf(item.editedQuantity) }
+    var currentStockLevel by remember(item.targetStockLevel, item.currentStockLevel) {
+        mutableStateOf(item.targetStockLevel ?: item.currentStockLevel ?: StockLevel.PLENTY)
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = item.ingredientName,
+                    style = MaterialTheme.typography.titleMedium
+                )
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Default.Close, contentDescription = "Close")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Different UI based on item type
+            if (item.isStockLevelItem) {
+                // Stock level selector (4 buttons)
+                DeductionStockLevelAdjuster(
+                    currentLevel = currentStockLevel,
+                    onLevelChange = { level ->
+                        currentStockLevel = level
+                        onStockLevelChange(level)
+                    },
+                    onSkip = onSkip
+                )
+            } else {
+                // Quantity adjuster with +/- buttons
+                DeductionCountAdjuster(
+                    item = item,
+                    currentQuantity = currentQuantity,
+                    onQuantityChange = { newQty ->
+                        currentQuantity = newQty
+                        onQuantityChange(newQty)
+                    },
+                    onSkip = onSkip
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Stock level adjuster with 4 buttons (Out, Low, Some, Plenty).
+ */
+@Composable
+private fun DeductionStockLevelAdjuster(
+    currentLevel: StockLevel,
+    onLevelChange: (StockLevel) -> Unit,
+    onSkip: () -> Unit
+) {
+    Column {
+        Text(
+            text = "Stock Level",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Stock level buttons
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            StockLevel.entries.forEach { level ->
+                FilterChip(
+                    selected = currentLevel == level,
+                    onClick = { onLevelChange(level) },
+                    label = { Text(level.displayName) },
+                    modifier = Modifier.weight(1f),
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = when (level) {
+                            StockLevel.OUT_OF_STOCK -> MaterialTheme.colorScheme.errorContainer
+                            StockLevel.LOW -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)
+                            StockLevel.SOME -> MaterialTheme.colorScheme.primaryContainer
+                            StockLevel.PLENTY -> MaterialTheme.colorScheme.primary
+                        }
+                    )
+                )
+            }
+        }
+
+        // Skip button
+        Spacer(modifier = Modifier.height(8.dp))
+        TextButton(
+            onClick = onSkip,
+            modifier = Modifier.align(Alignment.CenterHorizontally)
+        ) {
+            Text(
+                text = "Skip this ingredient",
+                style = MaterialTheme.typography.labelSmall
+            )
+        }
+    }
+}
+
+/**
+ * Quantity adjuster with +/- buttons for count/precise items.
+ * Tracks "Amount Used" - starts at recipe quantity, minus to reduce, plus only active after reducing.
+ * Long-press (1.5s) on minus button skips the item.
+ */
+@Composable
+private fun DeductionCountAdjuster(
+    item: PendingDeductionItem,
+    currentQuantity: Double,
+    onQuantityChange: (Double) -> Unit,
+    onSkip: () -> Unit
+) {
+    // Use 0.5 increment for small quantities, 1.0 for larger ones
+    val increment = if (item.originalQuantity < 5) 0.5 else 1.0
+
+    // Plus is only enabled if we've reduced below the original quantity
+    val canIncrease = currentQuantity < item.originalQuantity
+    // Minus is always enabled if quantity > 0
+    val canDecrease = currentQuantity > 0
+
+    Column {
+        // "Amount Used" label
+        Text(
+            text = "Amount Used",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.align(Alignment.CenterHorizontally)
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Quantity display with +/- buttons
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Minus button - decrease amount used, long-press to skip
+            @OptIn(ExperimentalFoundationApi::class)
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (canDecrease) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+                    )
+                    .combinedClickable(
+                        enabled = canDecrease,
+                        onClick = {
+                            val newQty = (currentQuantity - increment).coerceAtLeast(0.0)
+                            onQuantityChange(newQty)
+                        },
+                        onLongClick = {
+                            onSkip()
+                        }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.Remove,
+                    contentDescription = "Use less (hold to skip)",
+                    tint = if (canDecrease) MaterialTheme.colorScheme.onPrimary
+                           else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(24.dp))
+
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = formatQuantity(currentQuantity),
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                if (item.unit.isNotBlank()) {
+                    Text(
+                        text = item.unit,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(24.dp))
+
+            // Plus button - increase amount used (only if reduced below original)
+            FilledIconButton(
+                onClick = {
+                    val newQty = (currentQuantity + increment).coerceAtMost(item.originalQuantity)
+                    onQuantityChange(newQty)
+                },
+                enabled = canIncrease
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Use more")
+            }
+        }
+
+        // Show recipe quantity reference and skip hint
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Recipe called for: ${formatQuantity(item.originalQuantity)} ${item.unit}".trim(),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.align(Alignment.CenterHorizontally)
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Hold minus to skip this ingredient",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            modifier = Modifier.align(Alignment.CenterHorizontally)
+        )
+    }
+}
+
+
+@Composable
+private fun PantryMatchIndicator(hasPantryMatch: Boolean) {
+    Box(
+        modifier = Modifier
+            .size(8.dp)
+            .clip(CircleShape)
+            .background(
+                if (hasPantryMatch) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+            )
+    )
+}
+
+@Composable
+private fun StockLevelBadge(level: StockLevel?) {
+    if (level == null) return
+
+    val (containerColor, contentColor) = when (level) {
+        StockLevel.PLENTY -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+        StockLevel.SOME -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
+        StockLevel.LOW -> MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
+        StockLevel.OUT_OF_STOCK -> MaterialTheme.colorScheme.error to MaterialTheme.colorScheme.onError
+    }
+
+    Surface(
+        shape = RoundedCornerShape(4.dp),
+        color = containerColor
+    ) {
+        Text(
+            text = level.displayName,
+            style = MaterialTheme.typography.labelSmall,
+            color = contentColor,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+        )
+    }
+}
+
+
+@Composable
+private fun DeductionProcessingScreen() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            CircularProgressIndicator()
+            Text(
+                text = "Updating pantry...",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

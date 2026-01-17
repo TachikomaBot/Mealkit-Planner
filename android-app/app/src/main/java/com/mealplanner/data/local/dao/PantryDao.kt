@@ -52,4 +52,8 @@ interface PantryDao {
     // Deduct quantity from pantry when items are used (e.g., when cooking a recipe)
     @Query("UPDATE pantry_items SET quantityRemaining = MAX(0, quantityRemaining - :amount), lastUpdated = :timestamp WHERE LOWER(name) = LOWER(:ingredientName)")
     suspend fun deductByName(ingredientName: String, amount: Double, timestamp: Long): Int
+
+    // Update stock level for STOCK_LEVEL tracked items (spices, oils, condiments)
+    @Query("UPDATE pantry_items SET stockLevel = :newLevel, lastUpdated = :timestamp WHERE id = :id")
+    suspend fun updateStockLevel(id: Long, newLevel: String, timestamp: Long)
 }

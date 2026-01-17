@@ -17,6 +17,16 @@
   - Fallback to local categorization if AI fails
   - Loading screen with progress indicator during pantry stocking
   - Grocery list becomes read-only after shopping completion
+- [x] Pantry deduction confirmation screen - **COMPLETE**
+  - Shows when user taps "I Made This!" on recipe detail
+  - Review and adjust ingredient deductions before applying
+  - Handles STOCK_LEVEL vs COUNT/PRECISE tracking styles differently
+  - Half-unit (0.5) support for precise quantity adjustments
+  - Long-press minus to skip items, auto-restore on adjustment
+- [x] Pantry tab adjusters improved - **COMPLETE**
+  - Changed to +/- buttons (matching deduction screen style)
+  - Hold-to-repeat functionality when button is held down
+  - Repeat speed scales with quantity magnitude (fine-grained for small values, faster for large)
 
 ---
 
@@ -28,9 +38,16 @@
   - AI-powered categorization via Gemini ✓
   - [x] Show confirmation screen before adding items
   - [x] Allow user to edit quantities and names on confirmation screen
-- [ ] Auto-deduct ingredients from pantry after making a recipe
-  - Show confirmation screen before deducting
-  - Allow user to edit deductions to match actual usage
+- [x] Auto-deduct ingredients from pantry after making a recipe - **COMPLETE**
+  - [x] Show confirmation screen before deducting ("I Made This!" flow)
+  - [x] Allow user to edit deductions to match actual usage
+  - [x] Different UI for tracking styles:
+    - STOCK_LEVEL items (spices, oils): 4-button selector (Out/Low/Some/Plenty)
+    - COUNT/PRECISE items (produce, proteins): +/- buttons with 0.5 increment support
+  - [x] "Used: X | Unused: Y" badge display format
+  - [x] Long-press minus button to skip items (greyed out with "(Skipped)" badge)
+  - [x] Auto-restore skipped items when quantity is adjusted
+  - [x] Fuzzy matching of recipe ingredients to pantry items
 
 ### Ingredient Substitution - **COMPLETE**
 - [x] Edit ingredient names on confirmation screen to substitute

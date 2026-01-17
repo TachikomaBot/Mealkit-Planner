@@ -4,6 +4,7 @@ import com.mealplanner.data.local.dao.PantryDao
 import com.mealplanner.data.local.entity.PantryEntity
 import com.mealplanner.domain.model.PantryCategory
 import com.mealplanner.domain.model.PantryItem
+import com.mealplanner.domain.model.StockLevel
 import com.mealplanner.domain.repository.PantryRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -88,6 +89,27 @@ class PantryRepositoryImpl @Inject constructor(
             timestamp = System.currentTimeMillis()
         )
         return rowsAffected > 0
+    }
+
+    override suspend fun reduceStockLevel(itemId: Long): Boolean {
+        val entity = pantryDao.getById(itemId) ?: return false
+        val currentLevel = StockLevel.fromString(entity.stockLevel)
+        val newLevel = when (currentLevel) {
+            StockLevel.PLENTY -> StockLevel.SOME
+            StockLevel.SOME -> StockLevel.LOW
+            StockLevel.LOW, StockLevel.OUT_OF_STOCK -> StockLevel.OUT_OF_STOCK
+        }
+        if (newLevel != currentLevel) {
+            pantryDao.updateStockLevel(itemId, newLevel.name, System.currentTimeMillis())
+            return true
+        }
+        return false
+    }
+
+    override suspend fun setStockLevel(itemId: Long, level: StockLevel): Boolean {
+        val entity = pantryDao.getById(itemId) ?: return false
+        pantryDao.updateStockLevel(itemId, level.name, System.currentTimeMillis())
+        return true
     }
 
     override suspend fun deleteItem(id: Long) {
