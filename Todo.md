@@ -63,11 +63,14 @@
 ## Medium Priority
 
 ### Recipe Units & Quantities
-- [ ] Use spoons/cups in recipes, metric (grams/mL) in shopping list
-  - Recipes should be human-friendly (1 cup, 2 tbsp)
-  - Shopping list should use metric for precise purchasing
-- [ ] Fix Wild Mushroom Risotto liquid ratio (750mL broth for 175g rice seems off)
+- [x] Use spoons/cups in recipes, metric (grams/mL) in shopping list - **COMPLETE**
+  - Recipe construction prompt updated to use cooking measures (cups, tbsp, tsp)
+  - Proteins by piece count (2 chicken breasts), not grams
+  - Fresh herbs as descriptive amounts (1 bunch, 1 handful)
+  - Grocery polish converts cooking measures to metric for shopping
+  - Shelf-stable staples with LOW stock → "1 bag" (not measured amounts)
 - [ ] Check grocery list generation prompts - fresh herbs weren't listed last week (user had to use dried)
+  - Prompt already specifies "1 bunch cilantro" format - may have been one-time AI quirk
 
 ### Stock Level Tracking
 - [ ] Make Low/Some/Plenty the default tracking style (not precise measurements)

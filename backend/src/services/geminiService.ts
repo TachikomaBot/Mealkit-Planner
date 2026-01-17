@@ -727,13 +727,19 @@ Workflow Optimization:
 
 IMPORTANT: For ingredients with "to taste" or unmeasured quantities, use null for quantity, not a string.
 
-QUANTITY RULES - Use practical, rounded DECIMAL NUMBERS:
+QUANTITY RULES - Use COOKING MEASURES for human-friendly recipes:
 - The "quantity" field MUST be a number (e.g., 0.5, 1, 2.5), NEVER a string like "1/2"
-- Weights should end in 0 or 5: 500g, 450g, 225g, 125g (never 227g, 453g, 340g)
-- Liquids: 1L, 500ml, 250ml, 125ml (never 237ml, 118ml)
-- Whole items: round to whole numbers (1, 2, 3 - not 0.5 or 1.5)
-- For partial quantities, use clean decimals: 0.5, 0.25, 0.33 (never 0.38 or 0.875)
-- For metric weights, prefer: 100g, 125g, 150g, 200g, 225g, 250g, 300g, 350g, 400g, 450g, 500g
+- Use cooking measures: cups, tbsp, tsp for most ingredients
+- Common volumes: 1 cup, 0.5 cup, 0.25 cup, 0.33 cup, 1 tbsp, 0.5 tbsp, 1 tsp, 0.5 tsp
+- Whole items (eggs, cloves, onions): use whole numbers (1, 2, 3)
+- Proteins by piece: "2 chicken breasts", "4 salmon fillets" (not grams)
+- Liquids: cups for cooking (1 cup broth), or practical amounts (1 can coconut milk)
+- Rice/grains: cups (1 cup rice, 0.5 cup quinoa)
+- Cheese: cups shredded (1 cup), or descriptive (4 oz block)
+- Fresh produce: count with size (2 medium carrots, 1 large onion)
+- Fresh herbs: descriptive amounts (1 bunch, 1 handful, 2 sprigs)
+- Spices/seasonings: tsp or tbsp (1 tsp cumin, 0.5 tbsp paprika)
+- EXCEPTION: Only use grams for proteins when weight matters (ground beef: 500g)
 
 INGREDIENT RULES:
 - NEVER use pre-made/frozen convenience ingredients like: refrigerated pizza dough, frozen pie crust,
@@ -762,9 +768,12 @@ Respond with JSON:
       "prepTimeMinutes": 15,
       "cookTimeMinutes": 25,
       "ingredients": [
-        {"ingredientName": "chicken breast", "quantity": 500, "unit": "g", "preparation": "diced"},
-        {"ingredientName": "jasmine rice", "quantity": 200, "unit": "g", "preparation": null},
+        {"ingredientName": "chicken breast", "quantity": 2, "unit": "pieces", "preparation": "diced"},
+        {"ingredientName": "jasmine rice", "quantity": 1, "unit": "cup", "preparation": null},
         {"ingredientName": "garlic", "quantity": 4, "unit": "cloves", "preparation": "minced"},
+        {"ingredientName": "vegetable broth", "quantity": 1.5, "unit": "cups", "preparation": null},
+        {"ingredientName": "soy sauce", "quantity": 2, "unit": "tbsp", "preparation": null},
+        {"ingredientName": "fresh basil", "quantity": 1, "unit": "bunch", "preparation": "leaves picked"},
         {"ingredientName": "salt", "quantity": null, "unit": "to taste", "preparation": null}
       ],
       "steps": [
@@ -1057,8 +1066,10 @@ ${pantryItems.map(p => {
 
 PANTRY RULES:
 - If user has PLENTY or SOME of an item → exclude from shopping list
-- If user has LOW stock or specific count → subtract from needed amount
-- Example: Recipe needs 3 carrots, user has 1 → show "Carrots: 2"
+- If user has a specific numeric count → subtract from needed amount
+  - Example: Recipe needs 3 carrots, user has 1 → show "Carrots: 2"
+- If user has LOW or OUT_OF_STOCK for shelf-stable staples (flour, rice, sugar, spices) → include as "1 bag" or "1 jar"
+  - These items are bought in bulk, not measured amounts
 `
     : '';
 
@@ -1074,6 +1085,12 @@ YOUR JOB:
    - Combine all bell pepper colors unless recipe specifically needs a color
 
 2. Convert to PRACTICAL SHOPPING quantities:
+
+   CONVERT recipe cooking measures to METRIC shopping quantities:
+   - 2 chicken breasts → "450g (2 pieces)"
+   - 1 bunch fresh herbs → "1 bunch" (herbs stay as bunches)
+   - 2 medium carrots → "2 medium carrots" (produce stays as counts)
+   - Shelf-stable staples (rice, flour, sugar) → skip or "1 bag" if out of stock
 
    CRITICAL - NEVER use these in displayQuantity:
    - NO cups, tablespoons, teaspoons, or any spoon/cup measurements
@@ -1092,7 +1109,7 @@ YOUR JOB:
    - Leafy herbs: "1 bunch cilantro", "1 bunch parsley"
    - Root vegetables sold by weight: "500g potatoes", "250g carrots"
 
-   PROTEIN - Include piece count AND rounded weight:
+   PROTEIN - Include piece count when applicable AND rounded weight:
    - "Chicken Breast: 450g (2 pieces)"
    - "Salmon Fillets: 350g (2 fillets)"
    - "Ground Beef: 500g"
