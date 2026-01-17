@@ -23,7 +23,9 @@ import com.mealplanner.domain.usecase.GenerateMealPlanUseCase
 import com.mealplanner.domain.usecase.ManagePreferencesUseCase
 import com.mealplanner.domain.usecase.ManageShoppingListUseCase
 import com.mealplanner.service.GenerationState
+import com.mealplanner.service.GroceryPolishService
 import com.mealplanner.service.MealGenerationService
+import com.mealplanner.service.PolishState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.*
@@ -64,6 +66,7 @@ class MealPlanViewModel @Inject constructor(
     init {
         observeCurrentPlan()
         observeServiceState()
+        observePolishServiceState()
         observeShoppingList()
         loadCategories()
         checkAndResumePendingJobs()
@@ -167,6 +170,32 @@ class MealPlanViewModel @Inject constructor(
                         _uiState.value = MealPlanUiState.Error(state.message)
                         _generationProgress.value = null
                         MealGenerationService.resetState()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun observePolishServiceState() {
+        viewModelScope.launch {
+            GroceryPolishService.polishState.collect { state ->
+                when (state) {
+                    is PolishState.Idle -> {
+                        // Don't change UI state on idle
+                    }
+                    is PolishState.Polishing -> {
+                        _uiState.value = MealPlanUiState.PolishingGroceryList
+                    }
+                    is PolishState.Success -> {
+                        android.util.Log.d("MealPlanVM", "Polish service complete: ${state.shoppingList.items.size} items")
+                        transitionToActivePlan()
+                        GroceryPolishService.resetState()
+                    }
+                    is PolishState.Error -> {
+                        android.util.Log.e("MealPlanVM", "Polish service error: ${state.message}")
+                        // Polish failed but meal plan should still be available
+                        transitionToActivePlan()
+                        GroceryPolishService.resetState()
                     }
                 }
             }
@@ -359,31 +388,11 @@ class MealPlanViewModel @Inject constructor(
         }
     }
 
-    private suspend fun polishShoppingList(mealPlanId: Long) {
-        _uiState.value = MealPlanUiState.PolishingGroceryList
-        android.util.Log.d("MealPlanVM", "Starting shopping list generation for meal plan $mealPlanId")
-
-        // First generate the raw shopping list
-        shoppingRepository.generateShoppingList(mealPlanId)
-            .onSuccess { shoppingList ->
-                android.util.Log.d("MealPlanVM", "Generated ${shoppingList.items.size} shopping items, now polishing...")
-                // Then polish it with Gemini
-                shoppingRepository.polishShoppingList(mealPlanId)
-                    .onSuccess { polishedList ->
-                        android.util.Log.d("MealPlanVM", "Polish complete: ${polishedList.items.size} items")
-                        transitionToActivePlan()
-                    }
-                    .onFailure { error ->
-                        android.util.Log.e("MealPlanVM", "Polish failed: ${error.message}")
-                        // Polish failed but shopping list is still available (unpolished)
-                        transitionToActivePlan()
-                    }
-            }
-            .onFailure { error ->
-                android.util.Log.e("MealPlanVM", "Shopping list generation failed: ${error.message}")
-                // Shopping list generation failed, but meal plan is saved
-                transitionToActivePlan()
-            }
+    private fun polishShoppingList(mealPlanId: Long) {
+        android.util.Log.d("MealPlanVM", "Starting grocery polish service for meal plan $mealPlanId")
+        // Use foreground service to survive app backgrounding
+        GroceryPolishService.startPolish(context, mealPlanId)
+        // The observePolishServiceState() will handle state updates
     }
 
     private suspend fun transitionToActivePlan() {

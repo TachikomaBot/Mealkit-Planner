@@ -77,15 +77,26 @@ class MealGenerationService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
+            // Progress channel (low importance - silent)
+            val progressChannel = NotificationChannel(
+                CHANNEL_ID_PROGRESS,
                 "Meal Plan Generation",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Shows progress while generating your meal plan"
                 setShowBadge(false)
             }
-            notificationManager.createNotificationChannel(channel)
+            notificationManager.createNotificationChannel(progressChannel)
+
+            // Completion channel (default importance - shows notification)
+            val completionChannel = NotificationChannel(
+                CHANNEL_ID_COMPLETION,
+                "Meal Plan Ready",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Notifies when your meal plan is ready"
+            }
+            notificationManager.createNotificationChannel(completionChannel)
         }
     }
 
@@ -132,7 +143,7 @@ class MealGenerationService : Service() {
             (progress.current * 100) / progress.total
         } else 0
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        return NotificationCompat.Builder(this, CHANNEL_ID_PROGRESS)
             .setContentTitle("Generating Meal Plan")
             .setContentText(progress.message ?: phaseText)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
@@ -158,7 +169,7 @@ class MealGenerationService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        return NotificationCompat.Builder(this, CHANNEL_ID_COMPLETION)
             .setContentTitle(if (success) "Meal Plan Ready!" else "Generation Failed")
             .setContentText(message ?: if (success) "Your new meal plan is ready to view" else "Something went wrong")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
@@ -224,7 +235,8 @@ class MealGenerationService : Service() {
     }
 
     companion object {
-        const val CHANNEL_ID = "meal_generation_channel"
+        const val CHANNEL_ID_PROGRESS = "meal_generation_progress_channel"
+        const val CHANNEL_ID_COMPLETION = "meal_generation_completion_channel"
         const val NOTIFICATION_ID = 1001
         const val COMPLETION_NOTIFICATION_ID = 1002
 
