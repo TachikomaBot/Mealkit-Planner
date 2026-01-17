@@ -101,4 +101,24 @@ interface ShoppingRepository {
      * Used when user edits items in the confirmation screen.
      */
     suspend fun updateItem(itemId: Long, name: String, displayQuantity: String)
+
+    /**
+     * Check if there's a pending polish job and resume polling if so.
+     * Call this when app resumes from background.
+     * @return Result with polished shopping list, or null if no pending job
+     */
+    suspend fun checkAndResumePendingPolish(): Result<ShoppingList>?
+
+    /**
+     * Check if there's a pending categorize job and resume polling if so.
+     * Call this when app resumes from background.
+     * @return Result with categorized items, or null if no pending job
+     */
+    suspend fun checkAndResumePendingCategorize(): Result<List<CategorizedPantryItemDto>>?
+
+    /**
+     * Clean up stale pending jobs older than 1 hour.
+     * Should be called on app startup.
+     */
+    suspend fun cleanupStaleJobs()
 }

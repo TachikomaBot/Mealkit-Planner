@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.mealplanner.data.local.MealPlannerDatabase
 import com.mealplanner.data.local.dao.MealPlanDao
 import com.mealplanner.data.local.dao.PantryDao
+import com.mealplanner.data.local.dao.PendingJobDao
 import com.mealplanner.data.local.dao.PreferencesDao
 import com.mealplanner.data.local.dao.ShoppingDao
 import dagger.Module
@@ -50,5 +51,10 @@ object DatabaseModule {
     @Provides
     fun providePantryDao(database: MealPlannerDatabase): PantryDao {
         return database.pantryDao()
+    }
+
+    @Provides
+    fun providePendingJobDao(database: MealPlannerDatabase): PendingJobDao {
+        return database.pendingJobDao()
     }
 }

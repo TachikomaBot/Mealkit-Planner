@@ -1,5 +1,8 @@
 package com.mealplanner.data.repository
 
+import com.mealplanner.data.local.dao.PendingJobDao
+import com.mealplanner.data.local.entity.PendingJobEntity
+import com.mealplanner.data.local.entity.PendingJobType
 import com.mealplanner.data.remote.api.MealPlanApi
 import com.mealplanner.data.remote.api.RecipeApi
 import com.mealplanner.data.remote.dto.CookingStepDto
@@ -36,7 +39,8 @@ import javax.inject.Singleton
 @Singleton
 class RecipeRepositoryImpl @Inject constructor(
     private val recipeApi: RecipeApi,
-    private val mealPlanApi: MealPlanApi
+    private val mealPlanApi: MealPlanApi,
+    private val pendingJobDao: PendingJobDao
 ) : RecipeRepository {
 
     override suspend fun searchRecipes(
@@ -125,6 +129,15 @@ class RecipeRepositoryImpl @Inject constructor(
 
             val jobId = startResponse.jobId
 
+            // Persist job to DB so we can resume if app goes to background
+            withContext(Dispatchers.IO) {
+                pendingJobDao.insert(PendingJobEntity(
+                    jobId = jobId,
+                    jobType = PendingJobType.MEAL_GENERATION,
+                    relatedId = 0  // No specific related ID for generation
+                ))
+            }
+
             // Poll for status every 2 seconds
             var lastPhase: String? = null
             while (currentCoroutineContext().isActive) {
@@ -182,26 +195,20 @@ class RecipeRepositoryImpl @Inject constructor(
                             )
                         } ?: emit(GenerationResult.Error("Job completed but no result returned"))
 
-                        // Clean up the job on the server
-                        try {
-                            withContext(Dispatchers.IO) {
-                                mealPlanApi.deleteJob(jobId)
-                            }
-                        } catch (_: Exception) {
-                            // Ignore cleanup errors
+                        // Clean up the job on the server and from DB
+                        withContext(Dispatchers.IO) {
+                            pendingJobDao.delete(jobId)
+                            try { mealPlanApi.deleteJob(jobId) } catch (_: Exception) {}
                         }
                         return@flow
                     }
                     "failed" -> {
                         emit(GenerationResult.Error(status.error ?: "Job failed"))
 
-                        // Clean up the job on the server
-                        try {
-                            withContext(Dispatchers.IO) {
-                                mealPlanApi.deleteJob(jobId)
-                            }
-                        } catch (_: Exception) {
-                            // Ignore cleanup errors
+                        // Clean up the job on the server and from DB
+                        withContext(Dispatchers.IO) {
+                            pendingJobDao.delete(jobId)
+                            try { mealPlanApi.deleteJob(jobId) } catch (_: Exception) {}
                         }
                         return@flow
                     }
@@ -313,6 +320,107 @@ class RecipeRepositoryImpl @Inject constructor(
                 quantity = quantityRemaining.toLong().toDouble(), // Round to whole number
                 unit = unit.displayName
             )
+        }
+    }
+
+    /**
+     * Check if there's a pending meal generation job and resume polling if so.
+     * Call this when app resumes from background.
+     */
+    override fun checkAndResumePendingGeneration(): Flow<GenerationResult>? {
+        // Check synchronously if there's a pending job - we need to return Flow or null
+        // This is a blocking call but it's quick (just DB read)
+        val pendingJob = kotlinx.coroutines.runBlocking {
+            pendingJobDao.getByType(PendingJobType.MEAL_GENERATION)
+        } ?: return null
+
+        val jobId = pendingJob.jobId
+        android.util.Log.d("RecipeRepo", "Resuming pending generation job: $jobId")
+
+        return flow {
+            try {
+                // Poll for status every 2 seconds
+                var lastPhase: String? = null
+                while (currentCoroutineContext().isActive) {
+                    delay(2000)
+
+                    val status = withContext(Dispatchers.IO) {
+                        mealPlanApi.getJobStatus(jobId)
+                    }
+
+                    when (status.status) {
+                        "pending" -> {
+                            emit(
+                                GenerationResult.Progress(
+                                    GenerationProgress(
+                                        phase = GenerationPhase.CONNECTING,
+                                        current = 0,
+                                        total = 1,
+                                        message = "Resuming generation..."
+                                    )
+                                )
+                            )
+                        }
+                        "running" -> {
+                            val progress = status.progress
+                            val phase = when (progress?.phase) {
+                                "planning" -> GenerationPhase.PLANNING
+                                "building" -> GenerationPhase.BUILDING
+                                "generating_images" -> GenerationPhase.GENERATING_IMAGES
+                                else -> GenerationPhase.BUILDING
+                            }
+                            if (progress != null && (progress.phase != lastPhase || progress.current > 0)) {
+                                lastPhase = progress.phase
+                                emit(
+                                    GenerationResult.Progress(
+                                        GenerationProgress(
+                                            phase = phase,
+                                            current = progress.current,
+                                            total = progress.total,
+                                            message = progress.message
+                                        )
+                                    )
+                                )
+                            }
+                        }
+                        "completed" -> {
+                            status.result?.let { result ->
+                                emit(
+                                    GenerationResult.Success(
+                                        GeneratedMealPlan(
+                                            recipes = result.recipes.map { it.toRecipe() },
+                                            defaultSelections = result.defaultSelections
+                                        )
+                                    )
+                                )
+                            } ?: emit(GenerationResult.Error("Job completed but no result returned"))
+
+                            // Clean up
+                            withContext(Dispatchers.IO) {
+                                pendingJobDao.delete(jobId)
+                                try { mealPlanApi.deleteJob(jobId) } catch (_: Exception) {}
+                            }
+                            return@flow
+                        }
+                        "failed" -> {
+                            emit(GenerationResult.Error(status.error ?: "Job failed"))
+
+                            // Clean up
+                            withContext(Dispatchers.IO) {
+                                pendingJobDao.delete(jobId)
+                                try { mealPlanApi.deleteJob(jobId) } catch (_: Exception) {}
+                            }
+                            return@flow
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // Clean up on error
+                withContext(Dispatchers.IO) {
+                    pendingJobDao.delete(jobId)
+                }
+                emit(GenerationResult.Error(e.message ?: "Resume failed"))
+            }
         }
     }
 }

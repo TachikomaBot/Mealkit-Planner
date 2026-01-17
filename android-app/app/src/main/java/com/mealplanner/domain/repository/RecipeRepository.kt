@@ -50,6 +50,13 @@ interface RecipeRepository {
      * Generate a simple meal plan without AI (from dataset)
      */
     suspend fun generateSimpleMealPlan(): Result<GeneratedMealPlan>
+
+    /**
+     * Check if there's a pending meal generation job and resume polling if so.
+     * Call this when app resumes from background.
+     * @return Flow of generation results, or null if no pending job
+     */
+    fun checkAndResumePendingGeneration(): Flow<GenerationResult>?
 }
 
 /**

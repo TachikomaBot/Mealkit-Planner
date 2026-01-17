@@ -1,7 +1,10 @@
 package com.mealplanner.data.repository
 
 import com.mealplanner.data.local.dao.MealPlanDao
+import com.mealplanner.data.local.dao.PendingJobDao
 import com.mealplanner.data.local.dao.ShoppingDao
+import com.mealplanner.data.local.entity.PendingJobEntity
+import com.mealplanner.data.local.entity.PendingJobType
 import com.mealplanner.data.local.entity.ShoppingItemEntity
 import com.mealplanner.data.local.entity.ShoppingItemSourceEntity
 import com.mealplanner.data.remote.api.MealPlanApi
@@ -39,8 +42,13 @@ class ShoppingRepositoryImpl @Inject constructor(
     private val shoppingDao: ShoppingDao,
     private val mealPlanDao: MealPlanDao,
     private val mealPlanApi: MealPlanApi,
-    private val pantryRepository: PantryRepository
+    private val pantryRepository: PantryRepository,
+    private val pendingJobDao: PendingJobDao
 ) : ShoppingRepository {
+
+    companion object {
+        private const val STALE_JOB_CUTOFF_MS = 3600_000L  // 1 hour
+    }
 
     // NOTE: Exclusion logic (salt, water, oil, etc.) has been moved to the Gemini polish prompt.
     // This keeps the local code simple and lets Gemini make smarter decisions.
@@ -280,31 +288,15 @@ class ShoppingRepositoryImpl @Inject constructor(
             val jobId = startResponse.jobId
             android.util.Log.d("ShoppingRepo", "Polish job started: $jobId")
 
-            // Poll for completion
-            var polishResult: GroceryPolishResponse? = null
-            var pollCount = 0
-            while (polishResult == null) {
-                kotlinx.coroutines.delay(1000) // Poll every second
-                pollCount++
+            // Persist job to DB so we can resume if app goes to background
+            pendingJobDao.insert(PendingJobEntity(
+                jobId = jobId,
+                jobType = PendingJobType.GROCERY_POLISH,
+                relatedId = mealPlanId
+            ))
 
-                val status = mealPlanApi.getGroceryPolishJobStatus(jobId)
-                android.util.Log.d("ShoppingRepo", "Poll $pollCount: status=${status.status}")
-                when (status.status) {
-                    "completed" -> {
-                        polishResult = status.result
-                            ?: return@withContext Result.failure(Exception("Job completed but no result"))
-                        // Clean up the job
-                        try { mealPlanApi.deleteGroceryPolishJob(jobId) } catch (_: Exception) {}
-                    }
-                    "failed" -> {
-                        android.util.Log.e("ShoppingRepo", "Polish job failed: ${status.error}")
-                        // Clean up the job
-                        try { mealPlanApi.deleteGroceryPolishJob(jobId) } catch (_: Exception) {}
-                        return@withContext Result.failure(Exception(status.error ?: "Polish job failed"))
-                    }
-                    // "pending", "running" - continue polling
-                }
-            }
+            // Poll for completion
+            val polishResult = pollForPolishResult(jobId)
 
             android.util.Log.d("ShoppingRepo", "Polish complete: ${polishResult.items.size} items returned")
 
@@ -329,6 +321,9 @@ class ShoppingRepositoryImpl @Inject constructor(
             // This is necessary because the old sources were cascade-deleted with the old items
             regenerateSourcesAfterPolish(mealPlanId)
 
+            // Clear pending job from DB
+            pendingJobDao.delete(jobId)
+
             // Return updated shopping list
             val updatedItems = shoppingDao.getItemsForMealPlan(mealPlanId)
             android.util.Log.d("ShoppingRepo", "Polish saved: ${updatedItems.size} items in DB")
@@ -341,6 +336,87 @@ class ShoppingRepositoryImpl @Inject constructor(
             )
         } catch (e: Exception) {
             android.util.Log.e("ShoppingRepo", "Polish failed: ${e.message}", e)
+            // Clear pending job from DB on failure
+            pendingJobDao.getByType(PendingJobType.GROCERY_POLISH)?.let {
+                pendingJobDao.delete(it.jobId)
+            }
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Poll for polish job completion. Returns the result or throws on failure.
+     */
+    private suspend fun pollForPolishResult(jobId: String): GroceryPolishResponse {
+        var pollCount = 0
+        while (true) {
+            kotlinx.coroutines.delay(1000) // Poll every second
+            pollCount++
+
+            val status = mealPlanApi.getGroceryPolishJobStatus(jobId)
+            android.util.Log.d("ShoppingRepo", "Poll $pollCount: status=${status.status}")
+            when (status.status) {
+                "completed" -> {
+                    // Clean up the job on backend
+                    try { mealPlanApi.deleteGroceryPolishJob(jobId) } catch (_: Exception) {}
+                    return status.result
+                        ?: throw Exception("Job completed but no result")
+                }
+                "failed" -> {
+                    // Clean up the job on backend
+                    try { mealPlanApi.deleteGroceryPolishJob(jobId) } catch (_: Exception) {}
+                    throw Exception(status.error ?: "Polish job failed")
+                }
+                // "pending", "running" - continue polling
+            }
+        }
+    }
+
+    /**
+     * Check if there's a pending polish job and resume polling if so.
+     * Call this when app resumes from background.
+     */
+    override suspend fun checkAndResumePendingPolish(): Result<ShoppingList>? = withContext(Dispatchers.IO) {
+        val pendingJob = pendingJobDao.getByType(PendingJobType.GROCERY_POLISH) ?: return@withContext null
+        val jobId = pendingJob.jobId
+        val mealPlanId = pendingJob.relatedId
+
+        android.util.Log.d("ShoppingRepo", "Resuming pending polish job: $jobId for meal plan $mealPlanId")
+
+        try {
+            val polishResult = pollForPolishResult(jobId)
+            android.util.Log.d("ShoppingRepo", "Resumed polish complete: ${polishResult.items.size} items")
+
+            // Save the results (same logic as polishShoppingList)
+            shoppingDao.deleteItemsForMealPlan(mealPlanId)
+            val newItems = polishResult.items.map { polished ->
+                ShoppingItemEntity(
+                    mealPlanId = mealPlanId,
+                    ingredientName = polished.name,
+                    quantity = 0.0,
+                    unit = "",
+                    category = polished.category,
+                    polishedDisplayQuantity = polished.displayQuantity,
+                    notes = null
+                )
+            }
+            shoppingDao.insertItems(newItems)
+            regenerateSourcesAfterPolish(mealPlanId)
+
+            // Clear pending job from DB
+            pendingJobDao.delete(jobId)
+
+            val updatedItems = shoppingDao.getItemsForMealPlan(mealPlanId)
+            Result.success(
+                ShoppingList(
+                    mealPlanId = mealPlanId,
+                    items = updatedItems.map { it.toShoppingItem() },
+                    generatedAt = System.currentTimeMillis()
+                )
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("ShoppingRepo", "Resume polish failed: ${e.message}", e)
+            pendingJobDao.delete(jobId)
             Result.failure(e)
         }
     }
@@ -560,45 +636,97 @@ class ShoppingRepositoryImpl @Inject constructor(
                 val jobId = startResponse.jobId
                 android.util.Log.d("ShoppingRepo", "Pantry categorize job started: $jobId")
 
-                // Poll for completion (with 60 second timeout)
-                var result: List<CategorizedPantryItemDto>? = null
-                var pollCount = 0
-                val maxPolls = 60  // 60 seconds timeout
-                while (result == null && pollCount < maxPolls) {
-                    kotlinx.coroutines.delay(1000)  // Poll every second
-                    pollCount++
+                // Persist job to DB so we can resume if app goes to background
+                pendingJobDao.insert(PendingJobEntity(
+                    jobId = jobId,
+                    jobType = PendingJobType.PANTRY_CATEGORIZE,
+                    relatedId = 0  // No specific related ID for categorization
+                ))
 
-                    val status = mealPlanApi.getPantryCategorizeJobStatus(jobId)
-                    android.util.Log.d("ShoppingRepo", "Poll $pollCount: status=${status.status}")
-                    when (status.status) {
-                        "completed" -> {
-                            result = status.result?.items
-                                ?: return@withContext Result.failure(Exception("Job completed but no result"))
-                            // Clean up the job
-                            try { mealPlanApi.deletePantryCategorizeJob(jobId) } catch (_: Exception) {}
-                        }
-                        "failed" -> {
-                            android.util.Log.e("ShoppingRepo", "Categorize job failed: ${status.error}")
-                            try { mealPlanApi.deletePantryCategorizeJob(jobId) } catch (_: Exception) {}
-                            return@withContext Result.failure(Exception(status.error ?: "Categorize job failed"))
-                        }
-                        // "pending", "running" - continue polling
-                    }
-                }
+                // Poll for completion
+                val result = pollForCategorizeResult(jobId)
 
-                if (result == null) {
-                    android.util.Log.e("ShoppingRepo", "Categorize job timed out after ${maxPolls}s")
-                    try { mealPlanApi.deletePantryCategorizeJob(jobId) } catch (_: Exception) {}
-                    return@withContext Result.failure(Exception("Categorization timed out"))
-                }
+                // Clear pending job from DB
+                pendingJobDao.delete(jobId)
 
                 android.util.Log.d("ShoppingRepo", "Categorization complete: ${result.size} items")
                 Result.success(result)
             } catch (e: Exception) {
                 android.util.Log.e("ShoppingRepo", "Categorization failed: ${e.message}", e)
+                // Clear pending job from DB on failure
+                pendingJobDao.getByType(PendingJobType.PANTRY_CATEGORIZE)?.let {
+                    pendingJobDao.delete(it.jobId)
+                }
                 Result.failure(e)
             }
         }
+
+    /**
+     * Poll for categorize job completion. Returns the result or throws on failure.
+     */
+    private suspend fun pollForCategorizeResult(jobId: String): List<CategorizedPantryItemDto> {
+        var pollCount = 0
+        val maxPolls = 60  // 60 seconds timeout
+        while (pollCount < maxPolls) {
+            kotlinx.coroutines.delay(1000)  // Poll every second
+            pollCount++
+
+            val status = mealPlanApi.getPantryCategorizeJobStatus(jobId)
+            android.util.Log.d("ShoppingRepo", "Categorize poll $pollCount: status=${status.status}")
+            when (status.status) {
+                "completed" -> {
+                    // Clean up the job on backend
+                    try { mealPlanApi.deletePantryCategorizeJob(jobId) } catch (_: Exception) {}
+                    return status.result?.items
+                        ?: throw Exception("Job completed but no result")
+                }
+                "failed" -> {
+                    // Clean up the job on backend
+                    try { mealPlanApi.deletePantryCategorizeJob(jobId) } catch (_: Exception) {}
+                    throw Exception(status.error ?: "Categorize job failed")
+                }
+                // "pending", "running" - continue polling
+            }
+        }
+        // Timeout
+        try { mealPlanApi.deletePantryCategorizeJob(jobId) } catch (_: Exception) {}
+        throw Exception("Categorization timed out after ${maxPolls}s")
+    }
+
+    /**
+     * Check if there's a pending categorize job and resume polling if so.
+     * Call this when app resumes from background.
+     */
+    override suspend fun checkAndResumePendingCategorize(): Result<List<CategorizedPantryItemDto>>? = withContext(Dispatchers.IO) {
+        val pendingJob = pendingJobDao.getByType(PendingJobType.PANTRY_CATEGORIZE) ?: return@withContext null
+        val jobId = pendingJob.jobId
+
+        android.util.Log.d("ShoppingRepo", "Resuming pending categorize job: $jobId")
+
+        try {
+            val result = pollForCategorizeResult(jobId)
+            android.util.Log.d("ShoppingRepo", "Resumed categorize complete: ${result.size} items")
+
+            // Clear pending job from DB
+            pendingJobDao.delete(jobId)
+
+            Result.success(result)
+        } catch (e: Exception) {
+            android.util.Log.e("ShoppingRepo", "Resume categorize failed: ${e.message}", e)
+            pendingJobDao.delete(jobId)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Clean up stale pending jobs older than 1 hour.
+     * Should be called on app startup.
+     */
+    override suspend fun cleanupStaleJobs() = withContext(Dispatchers.IO) {
+        val cutoffTime = System.currentTimeMillis() - STALE_JOB_CUTOFF_MS
+        val deleted = pendingJobDao.deleteStaleJobs(cutoffTime)
+        android.util.Log.d("ShoppingRepo", "Cleaned up stale jobs older than 1 hour")
+    }
 
     override suspend fun getItemsWithSources(mealPlanId: Long): Map<Long, List<IngredientSource>> =
         withContext(Dispatchers.IO) {

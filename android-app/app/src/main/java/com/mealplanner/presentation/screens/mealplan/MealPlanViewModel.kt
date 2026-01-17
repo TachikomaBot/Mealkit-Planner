@@ -66,6 +66,56 @@ class MealPlanViewModel @Inject constructor(
         observeServiceState()
         observeShoppingList()
         loadCategories()
+        checkAndResumePendingJobs()
+    }
+
+    private fun checkAndResumePendingJobs() {
+        viewModelScope.launch {
+            // Clean up stale jobs on startup
+            shoppingRepository.cleanupStaleJobs()
+
+            // Resume meal generation if pending
+            recipeRepository.checkAndResumePendingGeneration()?.let { generationFlow ->
+                android.util.Log.d("MealPlanVM", "Resuming pending meal generation")
+                _uiState.value = MealPlanUiState.Generating
+                generationFlow.collect { result ->
+                    when (result) {
+                        is GenerationResult.Progress -> {
+                            _generationProgress.value = result.progress
+                        }
+                        is GenerationResult.Success -> {
+                            _uiState.value = MealPlanUiState.SelectingRecipes(
+                                generatedPlan = result.mealPlan,
+                                selectedIndices = result.mealPlan.defaultSelections.toMutableSet()
+                            )
+                            _generationProgress.value = null
+                        }
+                        is GenerationResult.Error -> {
+                            android.util.Log.e("MealPlanVM", "Resumed generation failed: ${result.message}")
+                            _uiState.value = MealPlanUiState.Error(result.message)
+                            _generationProgress.value = null
+                        }
+                    }
+                }
+                return@launch  // Don't check other jobs if generation was resumed
+            }
+
+            // Resume polish if pending
+            shoppingRepository.checkAndResumePendingPolish()?.let { result ->
+                android.util.Log.d("MealPlanVM", "Resuming pending polish job")
+                _uiState.value = MealPlanUiState.PolishingGroceryList
+                result.onSuccess { polishedList ->
+                    android.util.Log.d("MealPlanVM", "Resumed polish complete: ${polishedList.items.size} items")
+                    transitionToActivePlan()
+                }.onFailure { error ->
+                    android.util.Log.e("MealPlanVM", "Resumed polish failed: ${error.message}")
+                    // Polish failed but meal plan should still be available
+                    transitionToActivePlan()
+                }
+            }
+
+            // Note: categorize jobs are handled in ManageShoppingListUseCase during completeShoppingTrip
+        }
     }
 
     private fun observeShoppingList() {
