@@ -62,6 +62,9 @@ import com.mealplanner.domain.model.ShoppingList
 import com.mealplanner.domain.model.PendingPantryItem
 import com.mealplanner.presentation.components.GenerationLoadingScreen
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,6 +80,15 @@ fun MealPlanScreen(
     val categories by viewModel.categories.collectAsState()
     val shoppingList by viewModel.shoppingList.collectAsState()
     val shoppingCompletionState by viewModel.shoppingCompletionState.collectAsState()
+
+    // Check for pending async jobs when app returns from background
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            // This runs every time the lifecycle reaches RESUMED state
+            viewModel.checkAndResumePendingJobs()
+        }
+    }
 
     // Shopping completion dialog
     shoppingCompletionState?.let { completion ->

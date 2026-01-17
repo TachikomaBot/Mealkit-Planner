@@ -69,14 +69,30 @@ class MealPlanViewModel @Inject constructor(
         checkAndResumePendingJobs()
     }
 
-    private fun checkAndResumePendingJobs() {
+    /**
+     * Check for and resume any pending async jobs.
+     * Called on init and when app returns from background.
+     */
+    fun checkAndResumePendingJobs() {
+        // Don't check if we're already in an active flow state
+        val currentState = _uiState.value
+        if (currentState is MealPlanUiState.Generating ||
+            currentState is MealPlanUiState.PolishingGroceryList ||
+            currentState is MealPlanUiState.StockingPantry ||
+            currentState is MealPlanUiState.Saving) {
+            android.util.Log.d("MealPlanVM", "Skipping pending job check - already in active state: $currentState")
+            return
+        }
+
         viewModelScope.launch {
+            android.util.Log.d("MealPlanVM", "Checking for pending async jobs...")
+
             // Clean up stale jobs on startup
             shoppingRepository.cleanupStaleJobs()
 
             // Resume meal generation if pending
             recipeRepository.checkAndResumePendingGeneration()?.let { generationFlow ->
-                android.util.Log.d("MealPlanVM", "Resuming pending meal generation")
+                android.util.Log.d("MealPlanVM", "Found pending meal generation, resuming...")
                 _uiState.value = MealPlanUiState.Generating
                 generationFlow.collect { result ->
                     when (result) {
@@ -101,17 +117,20 @@ class MealPlanViewModel @Inject constructor(
             }
 
             // Resume polish if pending
-            shoppingRepository.checkAndResumePendingPolish()?.let { result ->
-                android.util.Log.d("MealPlanVM", "Resuming pending polish job")
-                _uiState.value = MealPlanUiState.PolishingGroceryList
-                result.onSuccess { polishedList ->
+            // checkAndResumePendingPolish returns null if no pending job, otherwise does the work
+            val polishResult = shoppingRepository.checkAndResumePendingPolish()
+            if (polishResult != null) {
+                android.util.Log.d("MealPlanVM", "Found and resumed pending polish job")
+                polishResult.onSuccess { polishedList ->
                     android.util.Log.d("MealPlanVM", "Resumed polish complete: ${polishedList.items.size} items")
-                    transitionToActivePlan()
                 }.onFailure { error ->
                     android.util.Log.e("MealPlanVM", "Resumed polish failed: ${error.message}")
-                    // Polish failed but meal plan should still be available
-                    transitionToActivePlan()
                 }
+                // Either way, transition to show the current state
+                // The shopping list flow will automatically update with any new data
+                transitionToActivePlan()
+            } else {
+                android.util.Log.d("MealPlanVM", "No pending polish job found")
             }
 
             // Note: categorize jobs are handled in ManageShoppingListUseCase during completeShoppingTrip
