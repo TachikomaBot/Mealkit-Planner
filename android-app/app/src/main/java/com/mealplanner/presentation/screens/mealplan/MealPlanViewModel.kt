@@ -68,6 +68,7 @@ class MealPlanViewModel @Inject constructor(
         observeServiceState()
         observePolishServiceState()
         observeShoppingList()
+        observeSelectionCustomization()
         loadCategories()
         checkAndResumePendingJobs()
     }
@@ -144,6 +145,46 @@ class MealPlanViewModel @Inject constructor(
         viewModelScope.launch {
             shoppingRepository.observeCurrentShoppingList()
                 .collect { _shoppingList.value = it }
+        }
+    }
+
+    /**
+     * Observe selection customization updates from RecipeDetailViewModel.
+     * When a customization is applied in selection mode, update the recipe in the generated plan.
+     */
+    private fun observeSelectionCustomization() {
+        viewModelScope.launch {
+            mealPlanRepository.observeSelectionCustomization().collect { customization ->
+                if (customization != null) {
+                    val (index, updatedRecipe) = customization
+                    applySelectionCustomization(index, updatedRecipe)
+                    mealPlanRepository.clearSelectionCustomization()
+                }
+            }
+        }
+    }
+
+    /**
+     * Apply a customization to a recipe in the selection stage.
+     */
+    private fun applySelectionCustomization(recipeIndex: Int, updatedRecipe: Recipe) {
+        val currentState = _uiState.value
+        if (currentState !is MealPlanUiState.SelectingRecipes) {
+            android.util.Log.w("MealPlanVM", "Cannot apply selection customization - not in SelectingRecipes state")
+            return
+        }
+
+        // Update the recipe in the generated plan
+        val updatedRecipes = currentState.generatedPlan.recipes.toMutableList()
+        if (recipeIndex in updatedRecipes.indices) {
+            updatedRecipes[recipeIndex] = updatedRecipe
+            android.util.Log.d("MealPlanVM", "Applied selection customization to recipe at index $recipeIndex: ${updatedRecipe.name}")
+
+            _uiState.value = currentState.copy(
+                generatedPlan = currentState.generatedPlan.copy(recipes = updatedRecipes)
+            )
+        } else {
+            android.util.Log.w("MealPlanVM", "Invalid recipe index for selection customization: $recipeIndex")
         }
     }
 

@@ -67,6 +67,17 @@ class RecipeDetailViewModel @Inject constructor(
     private var currentRecipeName: String? = null
     private var currentPlannedRecipeId: Long? = null
 
+    // Selection mode: non-null means we're viewing a recipe from the selection stage
+    private var selectionModeIndex: Int? = null
+
+    // Observable state for selection mode recipe (updates after customization)
+    private val _selectionModeRecipe = MutableStateFlow<Recipe?>(null)
+    val selectionModeRecipe: StateFlow<Recipe?> = _selectionModeRecipe.asStateFlow()
+
+    /** Returns true if viewing a recipe from the selection stage (not yet saved) */
+    val isSelectionMode: Boolean
+        get() = selectionModeIndex != null
+
     init {
         loadPantryItems()
         observeMealPlan()
@@ -109,8 +120,9 @@ class RecipeDetailViewModel @Inject constructor(
         }
     }
 
-    fun loadRecipeData(recipeName: String) {
+    fun loadRecipeData(recipeName: String, selectionIndex: Int? = null) {
         currentRecipeName = recipeName
+        selectionModeIndex = selectionIndex
 
         viewModelScope.launch {
             // Load recipe history
@@ -120,13 +132,27 @@ class RecipeDetailViewModel @Inject constructor(
             _rating.value = history?.rating
             _wouldMakeAgain.value = history?.wouldMakeAgain
 
-            // Find planned recipe in current meal plan
-            val mealPlan = mealPlanRepository.getCurrentMealPlan()
-            val planned = mealPlan?.recipes?.find { it.recipe.name == recipeName }
-            _plannedRecipe.value = planned
-            // Store the ID for future lookups (handles name changes from customization)
-            currentPlannedRecipeId = planned?.id
+            // Find planned recipe in current meal plan (only if not in selection mode)
+            if (selectionIndex == null) {
+                val mealPlan = mealPlanRepository.getCurrentMealPlan()
+                val planned = mealPlan?.recipes?.find { it.recipe.name == recipeName }
+                _plannedRecipe.value = planned
+                // Store the ID for future lookups (handles name changes from customization)
+                currentPlannedRecipeId = planned?.id
+            } else {
+                // In selection mode - no planned recipe yet
+                _plannedRecipe.value = null
+                currentPlannedRecipeId = null
+            }
         }
+    }
+
+    /**
+     * Set the recipe reference for selection mode customization.
+     * Called from RecipeDetailScreen when we have the actual Recipe object.
+     */
+    fun setSelectionModeRecipe(recipe: Recipe) {
+        _selectionModeRecipe.value = recipe
     }
 
     /**
@@ -418,6 +444,13 @@ class RecipeDetailViewModel @Inject constructor(
         val current = _customizationState.value
         if (current !is CustomizationState.Preview) return
 
+        // Check if we're in selection mode (recipe not yet saved to meal plan)
+        val selectionIndex = selectionModeIndex
+        if (selectionIndex != null) {
+            applySelectionModeCustomization(current, selectionIndex)
+            return
+        }
+
         val plannedRecipeId = _plannedRecipe.value?.id ?: return
 
         viewModelScope.launch {
@@ -472,6 +505,138 @@ class RecipeDetailViewModel @Inject constructor(
                     )
                 }
             )
+        }
+    }
+
+    /**
+     * Apply customization in selection mode (recipe not yet saved to meal plan).
+     * Builds the updated recipe and stores it via MealPlanRepository for the selection screen to pick up.
+     */
+    private fun applySelectionModeCustomization(preview: CustomizationState.Preview, selectionIndex: Int) {
+        val originalRecipe = _selectionModeRecipe.value ?: return
+
+        _customizationState.value = CustomizationState.Applying
+
+        // Build the final ingredients list (same logic as MealPlanRepositoryImpl)
+        val finalIngredients = mutableListOf<RecipeIngredient>()
+
+        // Start with original ingredients, applying modifications and removals
+        for (original in customizationOriginalIngredients) {
+            val isRemoved = preview.customization.ingredientsToRemove.any { removeStr ->
+                ingredientNameMatches(original.name, removeStr)
+            }
+            if (isRemoved) continue
+
+            val modification = preview.customization.ingredientsToModify.find {
+                ingredientNameMatches(original.name, it.originalName)
+            }
+
+            if (modification != null) {
+                finalIngredients.add(
+                    RecipeIngredient(
+                        name = modification.newName ?: original.name,
+                        quantity = modification.newQuantity ?: original.quantity,
+                        unit = modification.newUnit ?: original.unit,
+                        preparation = modification.newPreparation ?: original.preparation
+                    )
+                )
+            } else {
+                finalIngredients.add(original)
+            }
+        }
+
+        // Add new ingredients with category-based ordering
+        for (newIngredient in preview.customization.ingredientsToAdd) {
+            insertIngredientByCategory(finalIngredients, newIngredient)
+        }
+
+        // Build updated recipe
+        val updatedRecipe = originalRecipe.copy(
+            name = preview.customization.updatedRecipeName,
+            description = preview.customization.updatedDescription,
+            ingredients = finalIngredients,
+            steps = preview.customization.updatedSteps
+        )
+
+        // Store the customization for MealPlanViewModel to pick up
+        mealPlanRepository.setSelectionCustomization(selectionIndex, updatedRecipe)
+
+        // Reset state
+        _customizationState.value = CustomizationState.Idle
+        _previousCustomizationRequests.clear()
+        customizationOriginalIngredients = emptyList()
+
+        // Update the local recipe reference so the UI shows updated recipe
+        _selectionModeRecipe.value = updatedRecipe
+    }
+
+    // ========== Ingredient Category Ordering ==========
+
+    private enum class IngredientCategory(val priority: Int) {
+        PROTEIN(0),
+        DAIRY(1),
+        PRODUCE(2),
+        PANTRY(3),
+        SPICE(4),
+        OTHER(5)
+    }
+
+    private fun categorizeIngredient(name: String): IngredientCategory {
+        val lower = name.lowercase()
+
+        val proteinKeywords = listOf(
+            "chicken", "beef", "pork", "lamb", "turkey", "duck",
+            "salmon", "fish", "shrimp", "prawn", "tuna", "cod", "tilapia", "halibut",
+            "tofu", "tempeh", "seitan", "steak",
+            "bacon", "sausage", "ham", "fillet", "thigh", "breast", "ground"
+        )
+        if (proteinKeywords.any { lower.contains(it) }) return IngredientCategory.PROTEIN
+
+        val dairyKeywords = listOf(
+            "milk", "cream", "cheese", "butter", "yogurt", "sour cream",
+            "parmesan", "mozzarella", "cheddar", "feta", "ricotta"
+        )
+        if (dairyKeywords.any { lower.contains(it) }) return IngredientCategory.DAIRY
+
+        val spiceKeywords = listOf(
+            "salt", "pepper", "paprika", "cumin", "oregano", "thyme", "basil",
+            "rosemary", "parsley", "cilantro", "dill", "chili", "cayenne",
+            "cinnamon", "nutmeg", "turmeric", "curry", "ginger", "garlic powder",
+            "onion powder", "bay leaf", "clove", "coriander", "fennel seed"
+        )
+        if (spiceKeywords.any { lower.contains(it) }) return IngredientCategory.SPICE
+
+        val produceKeywords = listOf(
+            "onion", "garlic", "tomato", "potato", "carrot", "celery", "pepper",
+            "broccoli", "spinach", "lettuce", "kale", "cabbage", "zucchini",
+            "cucumber", "mushroom", "asparagus", "green bean", "pea", "corn",
+            "avocado", "lemon", "lime", "orange", "apple", "banana", "berry",
+            "scallion", "leek", "shallot", "jalapeño", "bell pepper", "snap pea"
+        )
+        if (produceKeywords.any { lower.contains(it) }) return IngredientCategory.PRODUCE
+
+        val pantryKeywords = listOf(
+            "rice", "pasta", "noodle", "quinoa", "couscous", "bread", "flour",
+            "oil", "vinegar", "soy sauce", "sauce", "broth", "stock",
+            "bean", "lentil", "chickpea", "canned", "sugar", "honey"
+        )
+        if (pantryKeywords.any { lower.contains(it) }) return IngredientCategory.PANTRY
+
+        return IngredientCategory.OTHER
+    }
+
+    private fun insertIngredientByCategory(
+        list: MutableList<RecipeIngredient>,
+        ingredient: RecipeIngredient
+    ) {
+        val newCategory = categorizeIngredient(ingredient.name)
+        val insertIndex = list.indexOfFirst { existing ->
+            categorizeIngredient(existing.name).priority > newCategory.priority
+        }
+        if (insertIndex == -1) {
+            list.add(ingredient)
+        } else {
+            list.add(insertIndex, ingredient)
         }
     }
 

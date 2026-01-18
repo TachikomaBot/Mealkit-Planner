@@ -35,10 +35,12 @@ import androidx.lifecycle.ViewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.mealplanner.domain.model.CookingStep
 import com.mealplanner.domain.model.Recipe
 import com.mealplanner.domain.model.RecipeIngredient
@@ -100,11 +102,15 @@ sealed class BottomNavTab(
 
 // Non-tab screens (full screen overlays)
 sealed class AppScreen(val route: String) {
-    data object RecipeDetail : AppScreen("recipe/{recipeJson}") {
-        fun createRoute(recipe: Recipe, json: Json): String {
+    data object RecipeDetail : AppScreen("recipe/{recipeJson}?selectionIndex={selectionIndex}") {
+        fun createRoute(recipe: Recipe, json: Json, selectionIndex: Int? = null): String {
             val jsonString = json.encodeToString(recipe.toNavArg())
             val encoded = Base64.encodeToString(jsonString.toByteArray(Charsets.UTF_8), Base64.URL_SAFE or Base64.NO_WRAP)
-            return "recipe/$encoded"
+            return if (selectionIndex != null) {
+                "recipe/$encoded?selectionIndex=$selectionIndex"
+            } else {
+                "recipe/$encoded"
+            }
         }
     }
     data object Shopping : AppScreen("shopping")
@@ -216,8 +222,8 @@ fun MainScreen(
                         onNavigateToSettings = {
                             navController.navigate(AppScreen.Settings.route)
                         },
-                        onRecipeClick = { recipe ->
-                            navController.navigate(AppScreen.RecipeDetail.createRoute(recipe, json))
+                        onRecipeClick = { recipe, selectionIndex ->
+                            navController.navigate(AppScreen.RecipeDetail.createRoute(recipe, json, selectionIndex))
                         }
                     )
                 }
@@ -248,13 +254,23 @@ fun MainScreen(
                     )
                 }
 
-                composable(AppScreen.RecipeDetail.route) { backStackEntry ->
+                composable(
+                    route = AppScreen.RecipeDetail.route,
+                    arguments = listOf(
+                        navArgument("selectionIndex") {
+                            type = NavType.IntType
+                            defaultValue = -1  // -1 means not in selection mode
+                        }
+                    )
+                ) { backStackEntry ->
                     val recipeJson = backStackEntry.arguments?.getString("recipeJson") ?: return@composable
+                    val selectionIndex = backStackEntry.arguments?.getInt("selectionIndex") ?: -1
                     val decodedBytes = Base64.decode(recipeJson, Base64.URL_SAFE)
                     val decoded = String(decodedBytes, Charsets.UTF_8)
                     val recipeArg = json.decodeFromString(RecipeNavArg.serializer(), decoded)
                     RecipeDetailScreen(
                         recipe = recipeArg.toRecipe(),
+                        selectionIndex = if (selectionIndex >= 0) selectionIndex else null,
                         onBack = { navController.popBackStack() }
                     )
                 }

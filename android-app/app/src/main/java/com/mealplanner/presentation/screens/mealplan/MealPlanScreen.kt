@@ -71,7 +71,7 @@ import androidx.lifecycle.repeatOnLifecycle
 fun MealPlanScreen(
     onNavigateToShopping: () -> Unit = {},
     onNavigateToSettings: () -> Unit,
-    onRecipeClick: (Recipe) -> Unit = {},
+    onRecipeClick: (Recipe, Int?) -> Unit = { _, _ -> },  // (recipe, selectionIndex)
     viewModel: MealPlanViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -124,7 +124,7 @@ fun MealPlanScreen(
             mealPlan = state.mealPlan,
             viewMode = state.viewMode,
             shoppingList = shoppingList,
-            onRecipeClick = onRecipeClick,
+            onRecipeClick = { recipe -> onRecipeClick(recipe, null) },  // null = not in selection mode
             onToggleViewMode = { viewModel.toggleViewMode() },
             onToggleCooked = { id, cooked -> viewModel.toggleCooked(id, cooked) },
             onToggleItemChecked = { viewModel.toggleItemChecked(it) },
@@ -196,7 +196,7 @@ fun MealPlanScreen(
                         onToggleSelection = { viewModel.toggleRecipeSelection(it) },
                         onSave = { viewModel.saveMealPlan() },
                         onRegenerate = { viewModel.reset() },
-                        onRecipeClick = onRecipeClick
+                        onRecipeClick = { recipe, index -> onRecipeClick(recipe, index) }
                     )
                 }
 
@@ -564,7 +564,7 @@ private fun RecipeSelectionContent(
     onToggleSelection: (Int) -> Unit,
     onSave: () -> Unit,
     onRegenerate: () -> Unit,
-    onRecipeClick: (Recipe) -> Unit
+    onRecipeClick: (Recipe, Int) -> Unit  // (recipe, selectionIndex)
 ) {
     val maxSelections = 6
     val selectedCount = selectedIndices.size
@@ -619,7 +619,7 @@ private fun RecipeSelectionContent(
                         recipe = recipe,
                         isSelected = selectedIndices.contains(index),
                         onToggle = { onToggleSelection(index) },
-                        onClick = { onRecipeClick(recipe) },
+                        onClick = { onRecipeClick(recipe, index) },
                         modifier = Modifier.animateItem()
                     )
                 }

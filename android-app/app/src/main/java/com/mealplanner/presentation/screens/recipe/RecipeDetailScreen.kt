@@ -59,6 +59,7 @@ import com.mealplanner.domain.model.StockLevel
 @Composable
 fun RecipeDetailScreen(
     recipe: Recipe,
+    selectionIndex: Int? = null,  // Non-null = recipe is from selection stage
     onBack: () -> Unit,
     viewModel: RecipeDetailViewModel = hiltViewModel()
 ) {
@@ -68,13 +69,21 @@ fun RecipeDetailScreen(
     val plannedRecipe by viewModel.plannedRecipe.collectAsState()
     val shoppingComplete by viewModel.shoppingComplete.collectAsState()
     val customizationState by viewModel.customizationState.collectAsState()
+    val selectionModeRecipeState by viewModel.selectionModeRecipe.collectAsState()
 
-    // Use the planned recipe's version if available (may have been customized)
-    val displayRecipe = plannedRecipe?.recipe ?: recipe
+    // Use the appropriate recipe version:
+    // 1. In selection mode: use the selection mode recipe (may have been customized)
+    // 2. With planned recipe: use the planned recipe's version (may have been customized)
+    // 3. Fallback: use the original recipe passed in
+    val displayRecipe = selectionModeRecipeState ?: plannedRecipe?.recipe ?: recipe
 
     // Load recipe data on launch
-    LaunchedEffect(recipe.name) {
-        viewModel.loadRecipeData(recipe.name)
+    LaunchedEffect(recipe.name, selectionIndex) {
+        viewModel.loadRecipeData(recipe.name, selectionIndex)
+        // Set recipe reference for selection mode customization
+        if (selectionIndex != null) {
+            viewModel.setSelectionModeRecipe(recipe)
+        }
     }
 
     // Switch between viewing and confirming deduction
@@ -86,6 +95,7 @@ fun RecipeDetailScreen(
                 recipeHistory = recipeHistory,
                 plannedRecipe = plannedRecipe,
                 shoppingComplete = shoppingComplete,
+                isSelectionMode = selectionIndex != null,
                 viewModel = viewModel,
                 onBack = onBack,
                 onIMadeThis = { viewModel.startDeductionConfirmation(displayRecipe) },
@@ -150,6 +160,7 @@ private fun RecipeDetailContent(
     recipeHistory: com.mealplanner.domain.model.RecipeHistory?,
     plannedRecipe: com.mealplanner.domain.model.PlannedRecipe?,
     shoppingComplete: Boolean,
+    isSelectionMode: Boolean,
     viewModel: RecipeDetailViewModel,
     onBack: () -> Unit,
     onIMadeThis: () -> Unit,
@@ -176,8 +187,10 @@ private fun RecipeDetailContent(
         }
     }
 
-    // Show customize FAB only if shopping is not complete and recipe is in meal plan
-    val showCustomizeFab = isInMealPlan && !shoppingComplete
+    // Show customize FAB if:
+    // 1. In selection mode (recipe being chosen for the week), OR
+    // 2. Recipe is in meal plan and shopping is not complete
+    val showCustomizeFab = isSelectionMode || (isInMealPlan && !shoppingComplete)
 
     Scaffold(
         topBar = {

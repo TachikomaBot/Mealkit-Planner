@@ -20,6 +20,8 @@ import com.mealplanner.domain.repository.MealPlanRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -35,6 +37,9 @@ class MealPlanRepositoryImpl @Inject constructor(
     private val mealPlanApi: MealPlanApi,
     private val json: Json
 ) : MealPlanRepository {
+
+    // Selection-stage customization state (before meal plan is saved)
+    private val _selectionCustomization = MutableStateFlow<Pair<Int, Recipe>?>(null)
 
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun observeCurrentMealPlan(): Flow<MealPlan?> {
@@ -643,5 +648,19 @@ class MealPlanRepositoryImpl @Inject constructor(
         } else {
             list.add(insertIndex, ingredient)
         }
+    }
+
+    // ========== Selection Stage Customization ==========
+
+    override fun observeSelectionCustomization(): Flow<Pair<Int, Recipe>?> {
+        return _selectionCustomization.asStateFlow()
+    }
+
+    override fun setSelectionCustomization(recipeIndex: Int, updatedRecipe: Recipe) {
+        _selectionCustomization.value = Pair(recipeIndex, updatedRecipe)
+    }
+
+    override fun clearSelectionCustomization() {
+        _selectionCustomization.value = null
     }
 }

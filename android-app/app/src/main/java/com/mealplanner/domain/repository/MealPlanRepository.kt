@@ -174,4 +174,27 @@ interface MealPlanRepository {
         customization: RecipeCustomizationResult,
         originalIngredients: List<RecipeIngredient>
     ): Result<Unit>
+
+    // ========== Selection Stage Customization ==========
+    // Used when customizing recipes before they're saved to a meal plan
+
+    /**
+     * Observe pending customization for selection-stage recipes.
+     * Returns (recipeIndex, updatedRecipe) when a customization is pending.
+     */
+    fun observeSelectionCustomization(): Flow<Pair<Int, Recipe>?>
+
+    /**
+     * Set a pending customization for a selection-stage recipe.
+     * Called by RecipeDetailViewModel when customization is confirmed in selection mode.
+     *
+     * @param recipeIndex The index of the recipe in the generated plan
+     * @param updatedRecipe The customized recipe
+     */
+    fun setSelectionCustomization(recipeIndex: Int, updatedRecipe: Recipe)
+
+    /**
+     * Clear the pending selection customization after it's been applied.
+     */
+    fun clearSelectionCustomization()
 }
