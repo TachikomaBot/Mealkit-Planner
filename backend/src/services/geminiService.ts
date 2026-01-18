@@ -2013,9 +2013,6 @@ Return the COMPLETE updated shopping list as JSON:
         responseMimeType: 'application/json',
         temperature: 0.2,
         maxOutputTokens: 16000,
-        thinkingConfig: {
-          thinkingLevel: ThinkingLevel.MEDIUM,
-        },
       }
     });
 
