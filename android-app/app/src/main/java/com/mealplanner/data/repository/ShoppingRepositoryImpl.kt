@@ -793,7 +793,7 @@ class ShoppingRepositoryImpl @Inject constructor(
 
     override suspend fun applyRecipeCustomization(
         mealPlanId: Long,
-        ingredientsToRemove: List<String>,
+        ingredientsToRemove: List<RecipeIngredient>,
         ingredientsToAdd: List<RecipeIngredient>,
         ingredientsToModify: List<ModifiedIngredient>
     ): Unit = withContext(Dispatchers.IO) {
@@ -802,16 +802,31 @@ class ShoppingRepositoryImpl @Inject constructor(
 
         val currentItems = shoppingDao.getItemsForMealPlan(mealPlanId)
 
-        // 1. Remove items matching removed ingredients
-        for (ingredientName in ingredientsToRemove) {
-            val normalizedRemove = normalizeForSourceMatch(ingredientName)
+        // 1. Subtract quantities for removed ingredients (only delete if quantity reaches zero)
+        for (ingredient in ingredientsToRemove) {
+            val normalizedRemove = normalizeForSourceMatch(ingredient.name)
             val matchingItems = currentItems.filter { item ->
                 val normalizedItem = normalizeForSourceMatch(item.ingredientName)
                 normalizedItem.contains(normalizedRemove) || normalizedRemove.contains(normalizedItem)
             }
             for (item in matchingItems) {
-                android.util.Log.d("ShoppingRepo", "Removing item: ${item.ingredientName} (matched '$ingredientName')")
-                shoppingDao.deleteItem(item.id)
+                val currentQty = extractQuantityFromDisplay(item.polishedDisplayQuantity)
+                    ?: item.quantity.takeIf { it > 0 }
+                    ?: ingredient.quantity  // Fallback: assume single recipe contribution
+
+                val newQty = currentQty - ingredient.quantity
+
+                if (newQty <= 0) {
+                    // Quantity exhausted - delete the item
+                    android.util.Log.d("ShoppingRepo", "Removing item: ${item.ingredientName} (qty $currentQty - ${ingredient.quantity} = $newQty)")
+                    shoppingDao.deleteItem(item.id)
+                } else {
+                    // Reduce quantity - update display
+                    val newDisplay = updateQuantityInDisplay(item.polishedDisplayQuantity, newQty)
+                        ?: "${newQty.formatForDisplay()} ${item.ingredientName}"
+                    android.util.Log.d("ShoppingRepo", "Reducing item: ${item.ingredientName} from $currentQty to $newQty")
+                    shoppingDao.updateItemNameAndQuantity(item.id, item.ingredientName, newDisplay)
+                }
             }
         }
 
@@ -856,5 +871,58 @@ class ShoppingRepositoryImpl @Inject constructor(
         }
 
         android.util.Log.d("ShoppingRepo", "Recipe customization applied to shopping list")
+    }
+
+    /**
+     * Extract the leading numeric quantity from a polished display string.
+     * e.g., "4 medium carrots" → 4.0, "1/2 cup flour" → 0.5
+     */
+    private fun extractQuantityFromDisplay(display: String?): Double? {
+        if (display.isNullOrBlank()) return null
+
+        // Match leading number (integer, decimal, or fraction)
+        val pattern = Regex("""^(\d+(?:\.\d+)?|\d+/\d+)\s*""")
+        val match = pattern.find(display.trim()) ?: return null
+        val numStr = match.groupValues[1]
+
+        return if (numStr.contains("/")) {
+            // Handle fractions like "1/2"
+            val parts = numStr.split("/")
+            if (parts.size == 2) {
+                parts[0].toDoubleOrNull()?.let { num ->
+                    parts[1].toDoubleOrNull()?.let { denom ->
+                        if (denom != 0.0) num / denom else null
+                    }
+                }
+            } else null
+        } else {
+            numStr.toDoubleOrNull()
+        }
+    }
+
+    /**
+     * Update the leading quantity in a polished display string.
+     * e.g., ("4 medium carrots", 2.0) → "2 medium carrots"
+     */
+    private fun updateQuantityInDisplay(display: String?, newQty: Double): String? {
+        if (display.isNullOrBlank()) return null
+
+        val pattern = Regex("""^(\d+(?:\.\d+)?|\d+/\d+)\s*""")
+        val match = pattern.find(display.trim()) ?: return null
+
+        val remainder = display.trim().substring(match.range.last + 1).trimStart()
+        return "${newQty.formatForDisplay()} $remainder"
+    }
+
+    /**
+     * Format a quantity for display, removing unnecessary decimal places.
+     * e.g., 2.0 → "2", 2.5 → "2.5"
+     */
+    private fun Double.formatForDisplay(): String {
+        return if (this == this.toLong().toDouble()) {
+            this.toLong().toString()
+        } else {
+            this.toString()
+        }
     }
 }

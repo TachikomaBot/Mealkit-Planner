@@ -436,10 +436,18 @@ class RecipeDetailViewModel @Inject constructor(
 
                     // Apply targeted updates to shopping list (preserves polished quantities)
                     mealPlanRepository.getCurrentMealPlan()?.id?.let { mealPlanId ->
-                        android.util.Log.d("RecipeDetailVM", "Applying targeted shopping list updates")
+                        // Map removed ingredient names to full RecipeIngredient with quantities
+                        val removedWithQuantities = current.customization.ingredientsToRemove.mapNotNull { name ->
+                            customizationOriginalIngredients.find {
+                                it.name.equals(name, ignoreCase = true)
+                            }
+                        }
+
+                        android.util.Log.d("RecipeDetailVM", "Applying targeted shopping list updates: " +
+                            "remove=${removedWithQuantities.map { "${it.quantity} ${it.name}" }}")
                         shoppingRepository.applyRecipeCustomization(
                             mealPlanId = mealPlanId,
-                            ingredientsToRemove = current.customization.ingredientsToRemove,
+                            ingredientsToRemove = removedWithQuantities,
                             ingredientsToAdd = current.customization.ingredientsToAdd,
                             ingredientsToModify = current.customization.ingredientsToModify
                         )

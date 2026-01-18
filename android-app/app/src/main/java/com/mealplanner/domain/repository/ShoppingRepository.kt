@@ -128,10 +128,13 @@ interface ShoppingRepository {
      * Apply recipe customization changes to the shopping list.
      * Does targeted add/remove/update instead of regenerating the whole list.
      * Preserves polished display quantities and checked states for unchanged items.
+     *
+     * For removed ingredients, quantities are subtracted from matching shopping items.
+     * Items are only deleted if their quantity reaches zero.
      */
     suspend fun applyRecipeCustomization(
         mealPlanId: Long,
-        ingredientsToRemove: List<String>,
+        ingredientsToRemove: List<RecipeIngredient>,
         ingredientsToAdd: List<RecipeIngredient>,
         ingredientsToModify: List<ModifiedIngredient>
     )
