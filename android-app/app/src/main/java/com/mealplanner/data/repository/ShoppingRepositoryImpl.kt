@@ -586,15 +586,21 @@ class ShoppingRepositoryImpl @Inject constructor(
 
     /**
      * Normalize ingredient name for source matching.
-     * More aggressive than pantry matching - strips common prefixes/suffixes to match
-     * polished names (e.g., "Fresh Basil" polished to "Basil") back to recipe ingredients.
+     * Strips common prefixes/suffixes to match ingredients across different naming styles
+     * (e.g., "Fresh Basil" matches "Basil", "medium carrots" matches "Large Carrots").
      */
     private fun normalizeForSourceMatch(name: String): String {
         return name.lowercase()
+            // Size qualifiers
+            .replace("large ", "")
+            .replace("medium ", "")
+            .replace("small ", "")
+            // Freshness/state
             .replace("fresh ", "")
             .replace("dried ", "")
             .replace("frozen ", "")
             .replace("canned ", "")
+            // Preparation styles
             .replace("chopped ", "")
             .replace("minced ", "")
             .replace("diced ", "")
@@ -602,6 +608,9 @@ class ShoppingRepositoryImpl @Inject constructor(
             .replace("whole ", "")
             .replace("ground ", "")
             .replace("crushed ", "")
+            .replace("grated ", "")
+            .replace("shredded ", "")
+            // Leaf variations
             .replace("leaves", "")
             .replace("leaf", "")
             .trim()
