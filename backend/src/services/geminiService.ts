@@ -2007,12 +2007,15 @@ Return the COMPLETE updated shopping list as JSON:
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
         temperature: 0.2,
         maxOutputTokens: 16000,
+        thinkingConfig: {
+          thinkingLevel: ThinkingLevel.MEDIUM,
+        },
       }
     });
 
