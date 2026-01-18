@@ -379,6 +379,7 @@ class MealPlanRepositoryImpl @Inject constructor(
 
             val request = RecipeCustomizationRequest(
                 recipeName = recipe.name,
+                description = recipe.description,
                 ingredients = recipe.ingredients.map { ing ->
                     RecipeIngredientDto(
                         ingredientName = ing.name,
@@ -401,6 +402,7 @@ class MealPlanRepositoryImpl @Inject constructor(
 
             val result = RecipeCustomizationResult(
                 updatedRecipeName = response.updatedRecipeName,
+                updatedDescription = response.updatedDescription,
                 ingredientsToAdd = response.ingredientsToAdd.map { dto ->
                     RecipeIngredient(
                         name = dto.ingredientName,
@@ -492,6 +494,7 @@ class MealPlanRepositoryImpl @Inject constructor(
             // Create updated recipe JSON
             val updatedRecipe = existingRecipe.copy(
                 name = customization.updatedRecipeName,
+                description = customization.updatedDescription,
                 ingredients = finalIngredients.map { ing ->
                     IngredientJson(
                         name = ing.name,

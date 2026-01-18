@@ -233,6 +233,7 @@ data class UpdatedIngredientDto(
 @Serializable
 data class RecipeCustomizationRequest(
     val recipeName: String,
+    val description: String,  // Original recipe description
     val ingredients: List<RecipeIngredientDto>,
     val steps: List<RecipeStepDto>,
     val customizationRequest: String,  // Free-form text from user
@@ -242,6 +243,7 @@ data class RecipeCustomizationRequest(
 @Serializable
 data class RecipeCustomizationResponse(
     val updatedRecipeName: String,
+    val updatedDescription: String,  // Updated recipe description
     val ingredientsToAdd: List<RecipeIngredientDto>,
     val ingredientsToRemove: List<String>,  // Names of ingredients to remove
     val ingredientsToModify: List<ModifiedIngredientDto>,  // Ingredients with changed quantities

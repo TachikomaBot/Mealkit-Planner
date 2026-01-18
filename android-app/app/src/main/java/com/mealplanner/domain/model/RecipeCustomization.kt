@@ -6,6 +6,7 @@ package com.mealplanner.domain.model
  */
 data class RecipeCustomizationResult(
     val updatedRecipeName: String,
+    val updatedDescription: String,  // Updated recipe description
     val ingredientsToAdd: List<RecipeIngredient>,
     val ingredientsToRemove: List<String>,  // Names of ingredients to remove
     val ingredientsToModify: List<ModifiedIngredient>,

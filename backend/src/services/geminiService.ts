@@ -1796,10 +1796,13 @@ TASK: Customize a recipe based on the user's request. You must:
 1. Interpret the user's natural language request
 2. Determine which ingredients need to be ADDED, REMOVED, or MODIFIED
 3. Update the recipe steps to reflect these changes
-4. Update the recipe name if the main ingredient or cooking style changes significantly
+4. Update the recipe name and description if the main ingredient or cooking style changes
 5. Provide a brief summary of what you changed
 
 RECIPE: "${request.recipeName}"
+
+CURRENT DESCRIPTION:
+${request.description || 'No description provided'}
 
 CURRENT INGREDIENTS:
 ${ingredientsText}
@@ -1845,6 +1848,7 @@ RESPONSE RULES:
 Return JSON:
 {
   "updatedRecipeName": "New recipe name or original if unchanged",
+  "updatedDescription": "Updated recipe description reflecting the changes",
   "ingredientsToAdd": [
     {"ingredientName": "name", "quantity": 1.0, "unit": "cup", "preparation": "diced or null"}
   ],
@@ -1887,6 +1891,8 @@ Return JSON:
     result.ingredientsToAdd = result.ingredientsToAdd || [];
     result.ingredientsToRemove = result.ingredientsToRemove || [];
     result.ingredientsToModify = result.ingredientsToModify || [];
+    // Use original description as fallback if Gemini didn't provide updated one
+    result.updatedDescription = result.updatedDescription || request.description || '';
 
     console.log(`[Customization] Result: "${result.updatedRecipeName}", +${result.ingredientsToAdd.length} -${result.ingredientsToRemove.length} ~${result.ingredientsToModify.length}`);
 
@@ -2007,27 +2013,21 @@ Return the COMPLETE updated shopping list as JSON:
         responseMimeType: 'application/json',
         temperature: 0.2,
         maxOutputTokens: 16000,
+        thinkingConfig: {
+          thinkingLevel: ThinkingLevel.MEDIUM,
+        },
       }
     });
 
-    const text = response.text?.trim() || '';
+    const text = response.text?.trim() || '{}';
     console.log('[ShoppingUpdate] Got response, parsing...');
+    console.log('[ShoppingUpdate] Raw response (first 500 chars):', text.substring(0, 500));
 
-    // Parse the response
-    let result: { items: PolishedGroceryItem[] };
-    try {
-      result = JSON.parse(text);
-    } catch (parseError) {
-      // Try to extract JSON from the response
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        result = JSON.parse(jsonMatch[0]);
-      } else {
-        throw new Error('Failed to parse response as JSON');
-      }
-    }
+    // Parse the response using the same helper as grocery polish
+    const result = extractAndParseJSON(text, 'items') as { items: PolishedGroceryItem[] };
 
     if (!result.items || !Array.isArray(result.items)) {
+      console.error('[ShoppingUpdate] Invalid response structure:', JSON.stringify(result).substring(0, 200));
       throw new Error('Invalid response structure - missing items array');
     }
 

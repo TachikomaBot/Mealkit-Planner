@@ -245,6 +245,7 @@ export interface SubstitutionJob {
 // Recipe customization types
 export interface RecipeCustomizationRequest {
   recipeName: string;
+  description: string;           // Original recipe description
   ingredients: RecipeIngredient[];
   steps: RecipeStep[];
   customizationRequest: string;  // Free-form text from user
@@ -261,6 +262,7 @@ export interface ModifiedIngredient {
 
 export interface RecipeCustomizationResponse {
   updatedRecipeName: string;
+  updatedDescription: string;              // Updated recipe description
   ingredientsToAdd: RecipeIngredient[];
   ingredientsToRemove: string[];           // Names of ingredients to remove
   ingredientsToModify: ModifiedIngredient[];
