@@ -13,6 +13,7 @@ import com.mealplanner.domain.model.StockLevel
 import com.mealplanner.domain.model.TrackingStyle
 import com.mealplanner.domain.repository.MealPlanRepository
 import com.mealplanner.domain.repository.PantryRepository
+import com.mealplanner.domain.repository.ShoppingRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,7 +25,8 @@ import javax.inject.Inject
 @HiltViewModel
 class RecipeDetailViewModel @Inject constructor(
     private val pantryRepository: PantryRepository,
-    private val mealPlanRepository: MealPlanRepository
+    private val mealPlanRepository: MealPlanRepository,
+    private val shoppingRepository: ShoppingRepository
 ) : ViewModel() {
 
     private val _pantryItems = MutableStateFlow<List<PantryItem>>(emptyList())
@@ -63,6 +65,7 @@ class RecipeDetailViewModel @Inject constructor(
 
     private var currentHistoryId: Long? = null
     private var currentRecipeName: String? = null
+    private var currentPlannedRecipeId: Long? = null
 
     init {
         loadPantryItems()
@@ -83,11 +86,24 @@ class RecipeDetailViewModel @Inject constructor(
                 // Track shopping completion status
                 _shoppingComplete.value = mealPlan?.shoppingComplete ?: false
 
-                // Find the planned recipe matching the current recipe name
+                // Find the planned recipe by ID (survives name changes from customization)
+                val plannedId = currentPlannedRecipeId
                 val recipeName = currentRecipeName
-                if (recipeName != null && mealPlan != null) {
-                    val planned = mealPlan.recipes.find { it.recipe.name == recipeName }
+                if (mealPlan != null) {
+                    val planned = if (plannedId != null) {
+                        // Prefer finding by ID once we have it
+                        mealPlan.recipes.find { it.id == plannedId }
+                    } else if (recipeName != null) {
+                        // Fall back to name for initial load
+                        mealPlan.recipes.find { it.recipe.name == recipeName }
+                    } else {
+                        null
+                    }
                     _plannedRecipe.value = planned
+                    // Store the ID for future lookups (handles name changes)
+                    if (planned != null && currentPlannedRecipeId == null) {
+                        currentPlannedRecipeId = planned.id
+                    }
                 }
             }
         }
@@ -108,6 +124,8 @@ class RecipeDetailViewModel @Inject constructor(
             val mealPlan = mealPlanRepository.getCurrentMealPlan()
             val planned = mealPlan?.recipes?.find { it.recipe.name == recipeName }
             _plannedRecipe.value = planned
+            // Store the ID for future lookups (handles name changes from customization)
+            currentPlannedRecipeId = planned?.id
         }
     }
 
@@ -401,6 +419,12 @@ class RecipeDetailViewModel @Inject constructor(
 
             result.fold(
                 onSuccess = {
+                    // Regenerate shopping list to reflect ingredient changes
+                    mealPlanRepository.getCurrentMealPlan()?.id?.let { mealPlanId ->
+                        android.util.Log.d("RecipeDetailVM", "Regenerating shopping list after customization")
+                        shoppingRepository.generateShoppingList(mealPlanId)
+                    }
+
                     _customizationState.value = CustomizationState.Idle
                     _previousCustomizationRequests.clear()
                     customizationOriginalIngredients = emptyList()
