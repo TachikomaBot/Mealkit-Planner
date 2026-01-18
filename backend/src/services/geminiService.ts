@@ -770,13 +770,13 @@ QUANTITY RULES - Use COOKING MEASURES for human-friendly recipes:
 - Common volumes: 1 cup, 0.5 cup, 0.25 cup, 0.33 cup, 1 tbsp, 0.5 tbsp, 1 tsp, 0.5 tsp
 - Whole items (eggs, cloves, onions): use whole numbers (1, 2, 3)
 - Proteins by piece: "2 chicken breasts", "4 salmon fillets" (not grams)
+- Proteins by weight: ALWAYS use GRAMS, never pounds (450g ground beef, not 1 lb)
 - Liquids: cups for cooking (1 cup broth), or practical amounts (1 can coconut milk)
 - Rice/grains: cups (1 cup rice, 0.5 cup quinoa)
-- Cheese: cups shredded (1 cup), or descriptive (4 oz block)
+- Cheese: cups shredded (1 cup), or grams (115g block)
 - Fresh produce: count with size (2 medium carrots, 1 large onion)
 - Fresh herbs: descriptive amounts (1 bunch, 1 handful, 2 sprigs)
 - Spices/seasonings: tsp or tbsp (1 tsp cumin, 0.5 tbsp paprika)
-- EXCEPTION: Only use grams for proteins when weight matters (ground beef: 500g)
 
 INGREDIENT RULES:
 - NEVER use pre-made/frozen convenience ingredients like: refrigerated pizza dough, frozen pie crust,
@@ -1844,6 +1844,12 @@ RESPONSE RULES:
 - Return ALL steps (even unchanged ones) in "updatedSteps"
 - The "changesSummary" should be 1-2 sentences explaining what was done
 - Use "notes" for any cooking tips related to the changes
+
+UNIT RULES:
+- Use METRIC units for protein by weight: grams not pounds (e.g., "450g" not "1 lb")
+- Use piece counts when appropriate: "2 chicken breasts", "4 salmon fillets"
+- Use metric for liquids: ml or L, not cups (except for common cooking measures like rice)
+- Spices can use tsp/tbsp
 
 Return JSON:
 {

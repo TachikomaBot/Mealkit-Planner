@@ -481,8 +481,10 @@ class MealPlanRepositoryImpl @Inject constructor(
                 }
             }
 
-            // Add new ingredients
-            finalIngredients.addAll(customization.ingredientsToAdd)
+            // Add new ingredients at appropriate positions based on category
+            for (newIngredient in customization.ingredientsToAdd) {
+                insertIngredientByCategory(finalIngredients, newIngredient)
+            }
 
             // Get existing planned recipe
             val existingEntity = mealPlanDao.getPlannedRecipeById(plannedRecipeId)
@@ -553,5 +555,93 @@ class MealPlanRepositoryImpl @Inject constructor(
             .replace("sliced ", "").replace("whole ", "").replace("ground ", "")
             .replace("crushed ", "").replace("grated ", "").replace("shredded ", "")
             .trim()
+    }
+
+    /**
+     * Ingredient category for ordering purposes.
+     * Lower priority number = appears earlier in list.
+     */
+    private enum class IngredientCategory(val priority: Int) {
+        PROTEIN(0),
+        DAIRY(1),
+        PRODUCE(2),
+        PANTRY(3),
+        SPICE(4),
+        OTHER(5)
+    }
+
+    /**
+     * Categorize an ingredient by name for ordering purposes.
+     */
+    private fun categorizeIngredient(name: String): IngredientCategory {
+        val lower = name.lowercase()
+
+        // Protein keywords
+        val proteinKeywords = listOf(
+            "chicken", "beef", "pork", "lamb", "turkey", "duck",
+            "salmon", "fish", "shrimp", "prawn", "tuna", "cod", "tilapia", "halibut",
+            "tofu", "tempeh", "seitan",
+            "bacon", "sausage", "ham", "steak", "fillet", "thigh", "breast", "ground"
+        )
+        if (proteinKeywords.any { lower.contains(it) }) return IngredientCategory.PROTEIN
+
+        // Dairy keywords
+        val dairyKeywords = listOf(
+            "milk", "cream", "cheese", "butter", "yogurt", "sour cream",
+            "parmesan", "mozzarella", "cheddar", "feta", "ricotta"
+        )
+        if (dairyKeywords.any { lower.contains(it) }) return IngredientCategory.DAIRY
+
+        // Spice/seasoning keywords (check before produce since "fresh basil" should be spice)
+        val spiceKeywords = listOf(
+            "salt", "pepper", "paprika", "cumin", "oregano", "thyme", "basil",
+            "rosemary", "parsley", "cilantro", "dill", "chili", "cayenne",
+            "cinnamon", "nutmeg", "turmeric", "curry", "ginger", "garlic powder",
+            "onion powder", "bay leaf", "clove", "coriander", "fennel seed"
+        )
+        if (spiceKeywords.any { lower.contains(it) }) return IngredientCategory.SPICE
+
+        // Produce keywords
+        val produceKeywords = listOf(
+            "onion", "garlic", "tomato", "potato", "carrot", "celery", "pepper",
+            "broccoli", "spinach", "lettuce", "kale", "cabbage", "zucchini",
+            "cucumber", "mushroom", "asparagus", "green bean", "pea", "corn",
+            "avocado", "lemon", "lime", "orange", "apple", "banana", "berry",
+            "scallion", "leek", "shallot", "jalapeño", "bell pepper", "snap pea"
+        )
+        if (produceKeywords.any { lower.contains(it) }) return IngredientCategory.PRODUCE
+
+        // Pantry keywords
+        val pantryKeywords = listOf(
+            "rice", "pasta", "noodle", "quinoa", "couscous", "bread", "flour",
+            "oil", "vinegar", "soy sauce", "sauce", "broth", "stock",
+            "bean", "lentil", "chickpea", "canned", "sugar", "honey"
+        )
+        if (pantryKeywords.any { lower.contains(it) }) return IngredientCategory.PANTRY
+
+        return IngredientCategory.OTHER
+    }
+
+    /**
+     * Insert an ingredient at the appropriate position based on its category.
+     * Maintains category ordering: Protein > Dairy > Produce > Pantry > Spice > Other
+     */
+    private fun insertIngredientByCategory(
+        list: MutableList<RecipeIngredient>,
+        ingredient: RecipeIngredient
+    ) {
+        val newCategory = categorizeIngredient(ingredient.name)
+
+        // Find the first ingredient with a lower priority (higher number) category
+        val insertIndex = list.indexOfFirst { existing ->
+            categorizeIngredient(existing.name).priority > newCategory.priority
+        }
+
+        if (insertIndex == -1) {
+            // No ingredient with lower priority found, append to end
+            list.add(ingredient)
+        } else {
+            list.add(insertIndex, ingredient)
+        }
     }
 }
