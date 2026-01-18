@@ -392,22 +392,6 @@ function extractAndParseJSON(text: string, expectedKey: string): Record<string, 
       .replace(/([^\\])\\n/g, '$1\\\\n');
   };
 
-  // Strategy 0: Check if response is an array that should be wrapped
-  // Gemini sometimes returns [...] instead of {"key": [...]}
-  const trimmed = cleaned.trim();
-  if (trimmed.startsWith('[')) {
-    try {
-      const fixed = fixCommonIssues(trimmed);
-      const parsed = JSON.parse(fixed);
-      if (Array.isArray(parsed)) {
-        console.log(`[JSON] Response was array, wrapping as {"${expectedKey}": [...]}`);
-        return { [expectedKey]: parsed };
-      }
-    } catch (e) {
-      console.log(`[JSON] Array parse attempt failed: ${(e as Error).message}`);
-    }
-  }
-
   // Strategy 1: Try to find balanced JSON directly from the cleaned text
   // This is more reliable than regex when there's extra text after the JSON
   const firstBrace = cleaned.indexOf('{');
@@ -2039,8 +2023,26 @@ Return the COMPLETE updated shopping list as JSON:
     console.log('[ShoppingUpdate] Got response, parsing...');
     console.log('[ShoppingUpdate] Raw response (first 500 chars):', text.substring(0, 500));
 
-    // Parse the response using the same helper as grocery polish
-    const result = extractAndParseJSON(text, 'items') as { items: PolishedGroceryItem[] };
+    // Parse the response - handle both {"items": [...]} and bare [...] formats
+    let result: { items: PolishedGroceryItem[] };
+
+    // Check if Gemini returned a bare array instead of {"items": [...]}
+    if (text.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) {
+          console.log('[ShoppingUpdate] Response was bare array, wrapping');
+          result = { items: parsed };
+        } else {
+          throw new Error('Unexpected non-array starting with [');
+        }
+      } catch (e) {
+        console.log('[ShoppingUpdate] Bare array parse failed, trying extractAndParseJSON');
+        result = extractAndParseJSON(text, 'items') as { items: PolishedGroceryItem[] };
+      }
+    } else {
+      result = extractAndParseJSON(text, 'items') as { items: PolishedGroceryItem[] };
+    }
 
     if (!result.items || !Array.isArray(result.items)) {
       console.error('[ShoppingUpdate] Invalid response structure:', JSON.stringify(result).substring(0, 200));
