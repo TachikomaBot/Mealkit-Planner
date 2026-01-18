@@ -4,10 +4,16 @@ import com.mealplanner.data.local.dao.MealPlanDao
 import com.mealplanner.data.local.entity.MealPlanEntity
 import com.mealplanner.data.local.entity.PlannedRecipeEntity
 import com.mealplanner.data.local.entity.RecipeHistoryEntity
+import com.mealplanner.data.remote.api.MealPlanApi
+import com.mealplanner.data.remote.dto.RecipeCustomizationRequest
+import com.mealplanner.data.remote.dto.RecipeIngredientDto
+import com.mealplanner.data.remote.dto.RecipeStepDto
 import com.mealplanner.domain.model.CookingStep
 import com.mealplanner.domain.model.MealPlan
+import com.mealplanner.domain.model.ModifiedIngredient
 import com.mealplanner.domain.model.PlannedRecipe
 import com.mealplanner.domain.model.Recipe
+import com.mealplanner.domain.model.RecipeCustomizationResult
 import com.mealplanner.domain.model.RecipeHistory
 import com.mealplanner.domain.model.RecipeIngredient
 import com.mealplanner.domain.repository.MealPlanRepository
@@ -26,6 +32,7 @@ import javax.inject.Singleton
 @Singleton
 class MealPlanRepositoryImpl @Inject constructor(
     private val mealPlanDao: MealPlanDao,
+    private val mealPlanApi: MealPlanApi,
     private val json: Json
 ) : MealPlanRepository {
 
@@ -358,6 +365,150 @@ class MealPlanRepositoryImpl @Inject constructor(
             Result.success(Unit)
         } catch (e: Exception) {
             android.util.Log.e("MealPlanRepo", "Failed to apply AI substitution: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun requestRecipeCustomization(
+        recipe: Recipe,
+        customizationRequest: String,
+        previousRequests: List<String>
+    ): Result<RecipeCustomizationResult> = withContext(Dispatchers.IO) {
+        try {
+            android.util.Log.d("MealPlanRepo", "Requesting customization for '${recipe.name}': $customizationRequest")
+
+            val request = RecipeCustomizationRequest(
+                recipeName = recipe.name,
+                ingredients = recipe.ingredients.map { ing ->
+                    RecipeIngredientDto(
+                        ingredientName = ing.name,
+                        quantity = ing.quantity,
+                        unit = ing.unit,
+                        preparation = ing.preparation
+                    )
+                },
+                steps = recipe.steps.map { step ->
+                    RecipeStepDto(
+                        title = step.title,
+                        substeps = step.substeps
+                    )
+                },
+                customizationRequest = customizationRequest,
+                previousRequests = previousRequests
+            )
+
+            val response = mealPlanApi.customizeRecipe(request)
+
+            val result = RecipeCustomizationResult(
+                updatedRecipeName = response.updatedRecipeName,
+                ingredientsToAdd = response.ingredientsToAdd.map { dto ->
+                    RecipeIngredient(
+                        name = dto.ingredientName,
+                        quantity = dto.quantity ?: 0.0,  // Default to 0 for "to taste" ingredients
+                        unit = dto.unit ?: "",
+                        preparation = dto.preparation
+                    )
+                },
+                ingredientsToRemove = response.ingredientsToRemove,
+                ingredientsToModify = response.ingredientsToModify.map { dto ->
+                    ModifiedIngredient(
+                        originalName = dto.originalName,
+                        newName = dto.newName,
+                        newQuantity = dto.newQuantity,
+                        newUnit = dto.newUnit,
+                        newPreparation = dto.newPreparation
+                    )
+                },
+                updatedSteps = response.updatedSteps.map { step ->
+                    CookingStep(
+                        title = step.title,
+                        substeps = step.substeps
+                    )
+                },
+                changesSummary = response.changesSummary,
+                notes = response.notes
+            )
+
+            android.util.Log.d("MealPlanRepo", "Customization result: ${result.changesSummary}")
+            Result.success(result)
+        } catch (e: Exception) {
+            android.util.Log.e("MealPlanRepo", "Recipe customization failed: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun applyRecipeCustomization(
+        plannedRecipeId: Long,
+        customization: RecipeCustomizationResult,
+        originalIngredients: List<RecipeIngredient>
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            android.util.Log.d("MealPlanRepo", "Applying customization to recipe $plannedRecipeId")
+
+            // Compute final ingredients list
+            val finalIngredients = mutableListOf<RecipeIngredient>()
+
+            // Start with original ingredients, applying modifications and removals
+            for (original in originalIngredients) {
+                // Check if removed
+                if (customization.ingredientsToRemove.any { it.equals(original.name, ignoreCase = true) }) {
+                    continue  // Skip removed ingredients
+                }
+
+                // Check if modified
+                val modification = customization.ingredientsToModify.find {
+                    it.originalName.equals(original.name, ignoreCase = true)
+                }
+
+                if (modification != null) {
+                    finalIngredients.add(
+                        RecipeIngredient(
+                            name = modification.newName ?: original.name,
+                            quantity = modification.newQuantity ?: original.quantity,
+                            unit = modification.newUnit ?: original.unit,
+                            preparation = modification.newPreparation ?: original.preparation
+                        )
+                    )
+                } else {
+                    finalIngredients.add(original)
+                }
+            }
+
+            // Add new ingredients
+            finalIngredients.addAll(customization.ingredientsToAdd)
+
+            // Get existing planned recipe
+            val existingEntity = mealPlanDao.getPlannedRecipeById(plannedRecipeId)
+                ?: return@withContext Result.failure(Exception("Planned recipe not found"))
+
+            // Parse existing recipe
+            val existingRecipe = json.decodeFromString(RecipeJson.serializer(), existingEntity.recipeJson)
+
+            // Create updated recipe JSON
+            val updatedRecipe = existingRecipe.copy(
+                name = customization.updatedRecipeName,
+                ingredients = finalIngredients.map { ing ->
+                    IngredientJson(
+                        name = ing.name,
+                        quantity = ing.quantity,
+                        unit = ing.unit,
+                        preparation = ing.preparation
+                    )
+                },
+                steps = customization.updatedSteps.map { step ->
+                    StepJson(title = step.title, substeps = step.substeps)
+                }
+            )
+
+            val updatedJson = json.encodeToString(RecipeJson.serializer(), updatedRecipe)
+
+            // Update database
+            mealPlanDao.updatePlannedRecipe(plannedRecipeId, customization.updatedRecipeName, updatedJson)
+
+            android.util.Log.d("MealPlanRepo", "Customization applied: ${customization.updatedRecipeName}")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            android.util.Log.e("MealPlanRepo", "Failed to apply customization: ${e.message}", e)
             Result.failure(e)
         }
     }

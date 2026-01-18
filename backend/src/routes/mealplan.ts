@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { loadRecipes } from '../services/recipeService.js';
-import { generateMealPlan, polishGroceryList, categorizePantryItems, processSubstitution } from '../services/geminiService.js';
+import { generateMealPlan, polishGroceryList, categorizePantryItems, processSubstitution, customizeRecipe } from '../services/geminiService.js';
 import {
   createJob,
   getJob,
@@ -24,7 +24,7 @@ import {
   failPantryCategorizeJob,
   deletePantryCategorizeJob,
 } from '../services/jobService.js';
-import type { MealPlanRequest, ProgressEvent, GroceryPolishRequest, GroceryPolishProgress, PantryCategorizeRequest, PantryCategorizeProgress, SubstitutionRequest } from '../types.js';
+import type { MealPlanRequest, ProgressEvent, GroceryPolishRequest, GroceryPolishProgress, PantryCategorizeRequest, PantryCategorizeProgress, SubstitutionRequest, RecipeCustomizationRequest } from '../types.js';
 
 const router = Router();
 
@@ -575,6 +575,40 @@ router.post('/process-substitution', async (req, res) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[Substitution] Error: ${message}`);
+    res.status(500).json({ error: message });
+  }
+});
+
+// Recipe customization endpoint
+router.post('/customize-recipe', async (req, res) => {
+  const apiKey = (req.headers['x-gemini-key'] as string) || process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    return res.status(401).json({ error: 'Gemini API key required in X-Gemini-Key header or GEMINI_API_KEY env var' });
+  }
+
+  const request = req.body as RecipeCustomizationRequest;
+
+  // Validate request
+  if (!request.recipeName || !request.ingredients || !request.steps || !request.customizationRequest) {
+    return res.status(400).json({ error: 'recipeName, ingredients, steps, and customizationRequest are required' });
+  }
+
+  if (!Array.isArray(request.ingredients) || request.ingredients.length === 0) {
+    return res.status(400).json({ error: 'ingredients must be a non-empty array' });
+  }
+
+  if (!Array.isArray(request.steps) || request.steps.length === 0) {
+    return res.status(400).json({ error: 'steps must be a non-empty array' });
+  }
+
+  try {
+    console.log(`[Customization] Processing: "${request.customizationRequest}" for "${request.recipeName}"`);
+    const result = await customizeRecipe(apiKey, request);
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Customization] Error: ${message}`);
     res.status(500).json({ error: message });
   }
 });

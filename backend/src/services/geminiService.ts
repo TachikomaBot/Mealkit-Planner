@@ -8,6 +8,8 @@ import type {
   ProgressEvent,
   SubstitutionRequest,
   SubstitutionResponse,
+  RecipeCustomizationRequest,
+  RecipeCustomizationResponse,
 } from '../types.js';
 
 // ============================================================================
@@ -1754,5 +1756,141 @@ Return JSON (you MUST convert quantities for herb substitutions):
       updatedSteps: request.steps,  // Return original steps unchanged
       notes: null,
     };
+  }
+}
+
+/**
+ * Process a free-form recipe customization request using Gemini.
+ * Handles requests like "make it vegetarian", "use jarred pesto", "make it spicier", etc.
+ */
+export async function customizeRecipe(
+  apiKey: string,
+  request: RecipeCustomizationRequest
+): Promise<RecipeCustomizationResponse> {
+  console.log(`[Customization] Processing: "${request.customizationRequest}" for "${request.recipeName}"`);
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  // Format ingredients for the prompt
+  const ingredientsText = request.ingredients.map(ing => {
+    const qty = ing.quantity !== null ? `${ing.quantity} ${ing.unit}` : ing.unit;
+    const prep = ing.preparation ? ` (${ing.preparation})` : '';
+    return `- ${qty} ${ing.ingredientName}${prep}`;
+  }).join('\n');
+
+  // Format steps for the prompt
+  const stepsText = request.steps.map((step, i) =>
+    `Step ${i + 1}: ${step.title}\n${step.substeps.map(s => `  - ${s}`).join('\n')}`
+  ).join('\n\n');
+
+  // Include previous requests for context in refine loop
+  const previousContext = request.previousRequests && request.previousRequests.length > 0
+    ? `\nPREVIOUS CUSTOMIZATION REQUESTS (for context):\n${request.previousRequests.map((r, i) => `${i + 1}. "${r}"`).join('\n')}\n`
+    : '';
+
+  const prompt = `You are a professional culinary consultant specializing in recipe adaptation.
+
+TASK: Customize a recipe based on the user's request. You must:
+1. Interpret the user's natural language request
+2. Determine which ingredients need to be ADDED, REMOVED, or MODIFIED
+3. Update the recipe steps to reflect these changes
+4. Update the recipe name if the main ingredient or cooking style changes significantly
+5. Provide a brief summary of what you changed
+
+RECIPE: "${request.recipeName}"
+
+CURRENT INGREDIENTS:
+${ingredientsText}
+
+CURRENT STEPS:
+${stepsText}
+${previousContext}
+USER'S CUSTOMIZATION REQUEST: "${request.customizationRequest}"
+
+CUSTOMIZATION GUIDELINES:
+
+For DIETARY CHANGES (vegetarian, vegan, gluten-free):
+- Identify ingredients that violate the diet
+- Suggest appropriate substitutes with converted quantities
+- Update recipe name to reflect the change (e.g., "Vegetarian Pad Thai")
+
+For INGREDIENT SUBSTITUTIONS (use jarred pesto, canned tomatoes):
+- Remove ingredients being replaced
+- Add the substitute ingredient with appropriate quantity
+- Consider if other ingredients should be adjusted
+- Update steps to reflect simpler/different preparation
+
+For FLAVOR ADJUSTMENTS (make it spicier, less salty):
+- Modify quantities of existing seasonings
+- Add new spices/seasonings if needed
+- Note the changes in the summary
+
+For SIMPLIFICATION (reduce prep time, fewer ingredients):
+- Identify ingredients that can be omitted or combined
+- Suggest pre-made alternatives where appropriate
+- Update steps to be simpler
+
+RESPONSE RULES:
+- Only include ingredients in "ingredientsToAdd" if they are NEW (not in original list)
+- Only include ingredients in "ingredientsToRemove" if they should be completely removed
+- Only include ingredients in "ingredientsToModify" if quantity/unit/preparation changes
+- If an ingredient is being REPLACED, put the old one in "ingredientsToRemove" and the new one in "ingredientsToAdd"
+- Keep original ingredients unchanged if they don't need modification
+- Return ALL steps (even unchanged ones) in "updatedSteps"
+- The "changesSummary" should be 1-2 sentences explaining what was done
+- Use "notes" for any cooking tips related to the changes
+
+Return JSON:
+{
+  "updatedRecipeName": "New recipe name or original if unchanged",
+  "ingredientsToAdd": [
+    {"ingredientName": "name", "quantity": 1.0, "unit": "cup", "preparation": "diced or null"}
+  ],
+  "ingredientsToRemove": ["ingredient name 1", "ingredient name 2"],
+  "ingredientsToModify": [
+    {"originalName": "original ingredient name", "newName": "new name or null", "newQuantity": 2.0, "newUnit": "tbsp", "newPreparation": "minced or null"}
+  ],
+  "updatedSteps": [
+    {"title": "Step title", "substeps": ["substep 1", "substep 2"]}
+  ],
+  "changesSummary": "Brief description of changes made",
+  "notes": "Optional cooking tips or null"
+}`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        temperature: 0.3,
+        maxOutputTokens: 8000,  // Larger for full recipe with all steps
+        thinkingConfig: {
+          thinkingLevel: ThinkingLevel.MEDIUM,
+        },
+      }
+    });
+
+    const text = response.text?.trim() || '{}';
+    console.log(`[Customization] Got response: ${text.slice(0, 500)}...`);
+
+    const result = JSON.parse(text) as RecipeCustomizationResponse;
+
+    // Validate the response
+    if (!result.updatedRecipeName || !result.updatedSteps || !result.changesSummary) {
+      throw new Error('Invalid response structure');
+    }
+
+    // Ensure arrays exist even if empty
+    result.ingredientsToAdd = result.ingredientsToAdd || [];
+    result.ingredientsToRemove = result.ingredientsToRemove || [];
+    result.ingredientsToModify = result.ingredientsToModify || [];
+
+    console.log(`[Customization] Result: "${result.updatedRecipeName}", +${result.ingredientsToAdd.length} -${result.ingredientsToRemove.length} ~${result.ingredientsToModify.length}`);
+
+    return result;
+  } catch (error) {
+    console.error('[Customization] Error:', error);
+    throw error;  // Let the route handler deal with the error
   }
 }

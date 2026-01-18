@@ -4,7 +4,9 @@ import com.mealplanner.domain.model.CookingStep
 import com.mealplanner.domain.model.MealPlan
 import com.mealplanner.domain.model.PlannedRecipe
 import com.mealplanner.domain.model.Recipe
+import com.mealplanner.domain.model.RecipeCustomizationResult
 import com.mealplanner.domain.model.RecipeHistory
+import com.mealplanner.domain.model.RecipeIngredient
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -143,5 +145,33 @@ interface MealPlanRepository {
         newUnit: String,
         newPreparation: String?,
         newSteps: List<CookingStep>
+    ): Result<Unit>
+
+    /**
+     * Request AI-powered recipe customization.
+     * Returns proposed changes for user review.
+     *
+     * @param recipe The recipe to customize
+     * @param customizationRequest Free-form text describing desired changes
+     * @param previousRequests Previous requests in this session (for refine loop)
+     */
+    suspend fun requestRecipeCustomization(
+        recipe: Recipe,
+        customizationRequest: String,
+        previousRequests: List<String> = emptyList()
+    ): Result<RecipeCustomizationResult>
+
+    /**
+     * Apply a customization result to a planned recipe.
+     * Updates the recipe in the database.
+     *
+     * @param plannedRecipeId The ID of the planned recipe to update
+     * @param customization The customization result to apply
+     * @param originalIngredients The original ingredients (needed to compute final list)
+     */
+    suspend fun applyRecipeCustomization(
+        plannedRecipeId: Long,
+        customization: RecipeCustomizationResult,
+        originalIngredients: List<RecipeIngredient>
     ): Result<Unit>
 }

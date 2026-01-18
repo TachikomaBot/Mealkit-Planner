@@ -241,3 +241,30 @@ export interface SubstitutionJob {
   createdAt: Date;
   updatedAt: Date;
 }
+
+// Recipe customization types
+export interface RecipeCustomizationRequest {
+  recipeName: string;
+  ingredients: RecipeIngredient[];
+  steps: RecipeStep[];
+  customizationRequest: string;  // Free-form text from user
+  previousRequests?: string[];   // For refine loop context
+}
+
+export interface ModifiedIngredient {
+  originalName: string;
+  newName: string | null;        // null if name unchanged
+  newQuantity: number | null;
+  newUnit: string | null;
+  newPreparation: string | null;
+}
+
+export interface RecipeCustomizationResponse {
+  updatedRecipeName: string;
+  ingredientsToAdd: RecipeIngredient[];
+  ingredientsToRemove: string[];           // Names of ingredients to remove
+  ingredientsToModify: ModifiedIngredient[];
+  updatedSteps: RecipeStep[];
+  changesSummary: string;                  // Human-readable summary of changes
+  notes: string | null;
+}

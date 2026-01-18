@@ -11,6 +11,8 @@ import com.mealplanner.data.remote.dto.PantryCategorizeRequest
 import com.mealplanner.data.remote.dto.StartJobResponse
 import com.mealplanner.data.remote.dto.SubstitutionRequest
 import com.mealplanner.data.remote.dto.SubstitutionResponse
+import com.mealplanner.data.remote.dto.RecipeCustomizationRequest
+import com.mealplanner.data.remote.dto.RecipeCustomizationResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -86,4 +88,10 @@ interface MealPlanApi {
     suspend fun processSubstitution(
         @Body request: SubstitutionRequest
     ): SubstitutionResponse
+
+    // Recipe customization endpoint
+    @POST("api/meal-plan/customize-recipe")
+    suspend fun customizeRecipe(
+        @Body request: RecipeCustomizationRequest
+    ): RecipeCustomizationResponse
 }

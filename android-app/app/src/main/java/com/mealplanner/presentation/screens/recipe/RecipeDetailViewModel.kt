@@ -6,7 +6,9 @@ import com.mealplanner.domain.model.PantryItem
 import com.mealplanner.domain.model.PendingDeductionItem
 import com.mealplanner.domain.model.PlannedRecipe
 import com.mealplanner.domain.model.Recipe
+import com.mealplanner.domain.model.RecipeCustomizationResult
 import com.mealplanner.domain.model.RecipeHistory
+import com.mealplanner.domain.model.RecipeIngredient
 import com.mealplanner.domain.model.StockLevel
 import com.mealplanner.domain.model.TrackingStyle
 import com.mealplanner.domain.repository.MealPlanRepository
@@ -45,6 +47,20 @@ class RecipeDetailViewModel @Inject constructor(
     private val _plannedRecipe = MutableStateFlow<PlannedRecipe?>(null)
     val plannedRecipe: StateFlow<PlannedRecipe?> = _plannedRecipe.asStateFlow()
 
+    // Track if shopping is complete (to hide customization FAB)
+    private val _shoppingComplete = MutableStateFlow(false)
+    val shoppingComplete: StateFlow<Boolean> = _shoppingComplete.asStateFlow()
+
+    // ========== Recipe Customization State ==========
+    private val _customizationState = MutableStateFlow<CustomizationState>(CustomizationState.Idle)
+    val customizationState: StateFlow<CustomizationState> = _customizationState.asStateFlow()
+
+    // Track previous requests for refine loop context
+    private val _previousCustomizationRequests = mutableListOf<String>()
+
+    // Store the original ingredients when customization starts (needed for applying changes)
+    private var customizationOriginalIngredients: List<RecipeIngredient> = emptyList()
+
     private var currentHistoryId: Long? = null
     private var currentRecipeName: String? = null
 
@@ -64,6 +80,9 @@ class RecipeDetailViewModel @Inject constructor(
     private fun observeMealPlan() {
         viewModelScope.launch {
             mealPlanRepository.observeCurrentMealPlan().collect { mealPlan ->
+                // Track shopping completion status
+                _shoppingComplete.value = mealPlan?.shoppingComplete ?: false
+
                 // Find the planned recipe matching the current recipe name
                 val recipeName = currentRecipeName
                 if (recipeName != null && mealPlan != null) {
@@ -306,6 +325,112 @@ class RecipeDetailViewModel @Inject constructor(
         _uiState.value = RecipeDetailUiState.ViewingRecipe
     }
 
+    // ========== Recipe Customization Flow ==========
+
+    /**
+     * Show the customization input dialog.
+     */
+    fun showCustomizeDialog(recipe: Recipe) {
+        customizationOriginalIngredients = recipe.ingredients
+        _previousCustomizationRequests.clear()
+        _customizationState.value = CustomizationState.InputDialog(recipe)
+    }
+
+    /**
+     * Submit a customization request to the AI.
+     */
+    fun submitCustomization(recipe: Recipe, request: String) {
+        if (request.isBlank()) return
+
+        viewModelScope.launch {
+            _customizationState.value = CustomizationState.Loading(request)
+
+            val result = mealPlanRepository.requestRecipeCustomization(
+                recipe = recipe,
+                customizationRequest = request,
+                previousRequests = _previousCustomizationRequests.toList()
+            )
+
+            result.fold(
+                onSuccess = { customization ->
+                    _previousCustomizationRequests.add(request)
+                    _customizationState.value = CustomizationState.Preview(
+                        recipe = recipe,
+                        customization = customization,
+                        lastRequest = request
+                    )
+                },
+                onFailure = { error ->
+                    _customizationState.value = CustomizationState.Error(
+                        recipe = recipe,
+                        message = error.message ?: "Failed to customize recipe"
+                    )
+                }
+            )
+        }
+    }
+
+    /**
+     * Refine the customization with an additional request.
+     * Re-opens the input dialog with the current recipe state.
+     */
+    fun refineCustomization() {
+        val current = _customizationState.value
+        if (current is CustomizationState.Preview) {
+            _customizationState.value = CustomizationState.InputDialog(current.recipe)
+        }
+    }
+
+    /**
+     * Apply the customization result to the recipe.
+     */
+    fun applyCustomization() {
+        val current = _customizationState.value
+        if (current !is CustomizationState.Preview) return
+
+        val plannedRecipeId = _plannedRecipe.value?.id ?: return
+
+        viewModelScope.launch {
+            _customizationState.value = CustomizationState.Applying
+
+            val result = mealPlanRepository.applyRecipeCustomization(
+                plannedRecipeId = plannedRecipeId,
+                customization = current.customization,
+                originalIngredients = customizationOriginalIngredients
+            )
+
+            result.fold(
+                onSuccess = {
+                    _customizationState.value = CustomizationState.Idle
+                    _previousCustomizationRequests.clear()
+                    customizationOriginalIngredients = emptyList()
+                },
+                onFailure = { error ->
+                    _customizationState.value = CustomizationState.Error(
+                        recipe = current.recipe,
+                        message = error.message ?: "Failed to apply customization"
+                    )
+                }
+            )
+        }
+    }
+
+    /**
+     * Cancel the customization and return to normal viewing.
+     */
+    fun cancelCustomization() {
+        _customizationState.value = CustomizationState.Idle
+        _previousCustomizationRequests.clear()
+        customizationOriginalIngredients = emptyList()
+    }
+
+    /**
+     * Dismiss an error and return to idle state.
+     */
+    fun dismissCustomizationError() {
+        _customizationState.value = CustomizationState.Idle
+    }
+
     private fun saveRating() {
         val historyId = currentHistoryId ?: return
         viewModelScope.launch {
@@ -352,4 +477,34 @@ sealed class RecipeDetailUiState {
 
     /** Processing the deductions */
     data object ProcessingDeduction : RecipeDetailUiState()
+}
+
+/**
+ * UI state for recipe customization flow.
+ */
+sealed class CustomizationState {
+    /** No customization in progress */
+    data object Idle : CustomizationState()
+
+    /** Showing text input dialog */
+    data class InputDialog(val recipe: Recipe) : CustomizationState()
+
+    /** Loading/processing the customization request */
+    data class Loading(val request: String) : CustomizationState()
+
+    /** Showing preview of proposed changes */
+    data class Preview(
+        val recipe: Recipe,
+        val customization: RecipeCustomizationResult,
+        val lastRequest: String
+    ) : CustomizationState()
+
+    /** Applying the customization to the recipe */
+    data object Applying : CustomizationState()
+
+    /** Error occurred during customization */
+    data class Error(
+        val recipe: Recipe,
+        val message: String
+    ) : CustomizationState()
 }

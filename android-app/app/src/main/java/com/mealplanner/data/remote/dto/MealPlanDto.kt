@@ -228,3 +228,33 @@ data class UpdatedIngredientDto(
     val unit: String,
     val preparation: String? = null  // null to remove preparation style
 )
+
+// Recipe customization DTOs
+@Serializable
+data class RecipeCustomizationRequest(
+    val recipeName: String,
+    val ingredients: List<RecipeIngredientDto>,
+    val steps: List<RecipeStepDto>,
+    val customizationRequest: String,  // Free-form text from user
+    val previousRequests: List<String> = emptyList()  // For refine loop context
+)
+
+@Serializable
+data class RecipeCustomizationResponse(
+    val updatedRecipeName: String,
+    val ingredientsToAdd: List<RecipeIngredientDto>,
+    val ingredientsToRemove: List<String>,  // Names of ingredients to remove
+    val ingredientsToModify: List<ModifiedIngredientDto>,  // Ingredients with changed quantities
+    val updatedSteps: List<RecipeStepDto>,
+    val changesSummary: String,  // Human-readable summary of changes
+    val notes: String? = null
+)
+
+@Serializable
+data class ModifiedIngredientDto(
+    val originalName: String,
+    val newName: String? = null,  // null if name unchanged
+    val newQuantity: Double? = null,
+    val newUnit: String? = null,
+    val newPreparation: String? = null
+)
