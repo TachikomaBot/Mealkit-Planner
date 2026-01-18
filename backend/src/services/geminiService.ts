@@ -392,6 +392,22 @@ function extractAndParseJSON(text: string, expectedKey: string): Record<string, 
       .replace(/([^\\])\\n/g, '$1\\\\n');
   };
 
+  // Strategy 0: Check if response is an array that should be wrapped
+  // Gemini sometimes returns [...] instead of {"key": [...]}
+  const trimmed = cleaned.trim();
+  if (trimmed.startsWith('[')) {
+    try {
+      const fixed = fixCommonIssues(trimmed);
+      const parsed = JSON.parse(fixed);
+      if (Array.isArray(parsed)) {
+        console.log(`[JSON] Response was array, wrapping as {"${expectedKey}": [...]}`);
+        return { [expectedKey]: parsed };
+      }
+    } catch (e) {
+      console.log(`[JSON] Array parse attempt failed: ${(e as Error).message}`);
+    }
+  }
+
   // Strategy 1: Try to find balanced JSON directly from the cleaned text
   // This is more reliable than regex when there's extra text after the JSON
   const firstBrace = cleaned.indexOf('{');
