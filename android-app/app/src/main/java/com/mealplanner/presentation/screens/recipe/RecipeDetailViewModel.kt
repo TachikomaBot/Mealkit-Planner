@@ -129,6 +129,18 @@ class RecipeDetailViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Refresh the planned recipe from database.
+     * Called after customization to ensure UI shows updated data.
+     */
+    private suspend fun refreshPlannedRecipe() {
+        val plannedId = currentPlannedRecipeId ?: return
+        val mealPlan = mealPlanRepository.getCurrentMealPlan() ?: return
+        val planned = mealPlan.recipes.find { it.id == plannedId }
+        _plannedRecipe.value = planned
+        android.util.Log.d("RecipeDetailVM", "Refreshed planned recipe: ${planned?.recipe?.name}")
+    }
+
     fun markAsCooked(recipe: Recipe) {
         val planned = _plannedRecipe.value ?: return
 
@@ -419,6 +431,9 @@ class RecipeDetailViewModel @Inject constructor(
 
             result.fold(
                 onSuccess = {
+                    // Refresh the recipe UI immediately
+                    refreshPlannedRecipe()
+
                     // Regenerate shopping list to reflect ingredient changes
                     mealPlanRepository.getCurrentMealPlan()?.id?.let { mealPlanId ->
                         android.util.Log.d("RecipeDetailVM", "Regenerating shopping list after customization")
