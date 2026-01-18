@@ -863,20 +863,46 @@ class ShoppingRepositoryImpl @Inject constructor(
             }
         }
 
-        // 3. Add new items for added ingredients
+        // 3. Add new items for added ingredients (merge with existing if similar item exists)
+        // Re-fetch current items since we may have modified some above
+        val updatedItems = shoppingDao.getItemsForMealPlan(mealPlanId)
+
         for (ingredient in ingredientsToAdd) {
-            val displayQty = "${ingredient.quantity} ${ingredient.unit}".trim()
-            val newItem = ShoppingItemEntity(
-                mealPlanId = mealPlanId,
-                ingredientName = ingredient.name,
-                quantity = ingredient.quantity,
-                unit = ingredient.unit,
-                category = ShoppingCategories.OTHER,  // Will be categorized on next polish
-                polishedDisplayQuantity = displayQty,
-                notes = null
-            )
-            val newId = shoppingDao.insertItem(newItem)
-            android.util.Log.d("ShoppingRepo", "Added item: ${ingredient.name} ($displayQty) with id=$newId")
+            val normalizedNew = normalizeForSourceMatch(ingredient.name)
+
+            // Check if a similar ingredient already exists in the shopping list
+            val existingItem = updatedItems.find { item ->
+                val normalizedExisting = normalizeForSourceMatch(item.ingredientName)
+                normalizedExisting.contains(normalizedNew) || normalizedNew.contains(normalizedExisting)
+            }
+
+            if (existingItem != null) {
+                // Merge with existing item - add quantities
+                val existingQty = extractQuantityFromDisplay(existingItem.polishedDisplayQuantity)
+                    ?: existingItem.quantity.takeIf { it > 0 }
+                    ?: 0.0
+                val newTotalQty = existingQty + ingredient.quantity
+                val newDisplay = updateQuantityInDisplay(existingItem.polishedDisplayQuantity, newTotalQty)
+                    ?: "${newTotalQty.formatForDisplay()} ${existingItem.ingredientName}"
+
+                android.util.Log.d("ShoppingRepo", "Merging ingredient: ${ingredient.name} into ${existingItem.ingredientName}, " +
+                    "qty $existingQty + ${ingredient.quantity} = $newTotalQty")
+                shoppingDao.updateItemNameAndQuantity(existingItem.id, existingItem.ingredientName, newDisplay)
+            } else {
+                // No existing item - create new
+                val displayQty = "${ingredient.quantity} ${ingredient.unit}".trim()
+                val newItem = ShoppingItemEntity(
+                    mealPlanId = mealPlanId,
+                    ingredientName = ingredient.name,
+                    quantity = ingredient.quantity,
+                    unit = ingredient.unit,
+                    category = ShoppingCategories.OTHER,  // Will be categorized on next polish
+                    polishedDisplayQuantity = displayQty,
+                    notes = null
+                )
+                val newId = shoppingDao.insertItem(newItem)
+                android.util.Log.d("ShoppingRepo", "Added new item: ${ingredient.name} ($displayQty) with id=$newId")
+            }
         }
 
         android.util.Log.d("ShoppingRepo", "Recipe customization applied to shopping list")

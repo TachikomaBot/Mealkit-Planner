@@ -444,20 +444,25 @@ class MealPlanRepositoryImpl @Inject constructor(
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             android.util.Log.d("MealPlanRepo", "Applying customization to recipe $plannedRecipeId")
+            android.util.Log.d("MealPlanRepo", "ingredientsToRemove: ${customization.ingredientsToRemove}")
 
             // Compute final ingredients list
             val finalIngredients = mutableListOf<RecipeIngredient>()
 
             // Start with original ingredients, applying modifications and removals
             for (original in originalIngredients) {
-                // Check if removed
-                if (customization.ingredientsToRemove.any { it.equals(original.name, ignoreCase = true) }) {
+                // Check if removed (fuzzy match - Gemini may return "2 pieces salmon fillets" for "Salmon Fillets")
+                val isRemoved = customization.ingredientsToRemove.any { removeStr ->
+                    ingredientNameMatches(original.name, removeStr)
+                }
+                if (isRemoved) {
+                    android.util.Log.d("MealPlanRepo", "Removing ingredient: ${original.name}")
                     continue  // Skip removed ingredients
                 }
 
-                // Check if modified
+                // Check if modified (fuzzy match)
                 val modification = customization.ingredientsToModify.find {
-                    it.originalName.equals(original.name, ignoreCase = true)
+                    ingredientNameMatches(original.name, it.originalName)
                 }
 
                 if (modification != null) {
@@ -511,5 +516,39 @@ class MealPlanRepositoryImpl @Inject constructor(
             android.util.Log.e("MealPlanRepo", "Failed to apply customization: ${e.message}", e)
             Result.failure(e)
         }
+    }
+
+    /**
+     * Check if two ingredient names match, using fuzzy matching.
+     * Handles cases where Gemini returns "2 pieces salmon fillets (pat dry)" but
+     * the recipe ingredient is just "Salmon Fillets".
+     */
+    private fun ingredientNameMatches(ingredientName: String, searchString: String): Boolean {
+        val normalizedIngredient = normalizeIngredientName(ingredientName)
+        val normalizedSearch = normalizeIngredientName(searchString)
+
+        // Check if either contains the other (handles partial matches)
+        return normalizedIngredient.contains(normalizedSearch) ||
+               normalizedSearch.contains(normalizedIngredient)
+    }
+
+    /**
+     * Normalize ingredient name for matching - strips quantities, sizes, preparations.
+     */
+    private fun normalizeIngredientName(name: String): String {
+        return name.lowercase()
+            // Remove leading quantities like "2 pieces", "1/2 cup", "350g"
+            .replace(Regex("""^\d+(\.\d+)?\s*(pieces?|piece|g|kg|ml|l|oz|lb|cup|cups|tbsp|tsp)?\s*"""), "")
+            // Remove parenthetical notes like "(pat dry)", "(boneless)"
+            .replace(Regex("""\([^)]*\)"""), "")
+            // Size qualifiers
+            .replace("large ", "").replace("medium ", "").replace("small ", "")
+            // Freshness/state
+            .replace("fresh ", "").replace("dried ", "").replace("frozen ", "").replace("canned ", "")
+            // Preparation styles
+            .replace("chopped ", "").replace("minced ", "").replace("diced ", "")
+            .replace("sliced ", "").replace("whole ", "").replace("ground ", "")
+            .replace("crushed ", "").replace("grated ", "").replace("shredded ", "")
+            .trim()
     }
 }

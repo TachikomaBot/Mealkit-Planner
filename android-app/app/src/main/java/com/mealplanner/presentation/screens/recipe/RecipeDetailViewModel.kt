@@ -437,14 +437,17 @@ class RecipeDetailViewModel @Inject constructor(
                     // Apply targeted updates to shopping list (preserves polished quantities)
                     mealPlanRepository.getCurrentMealPlan()?.id?.let { mealPlanId ->
                         // Map removed ingredient names to full RecipeIngredient with quantities
-                        val removedWithQuantities = current.customization.ingredientsToRemove.mapNotNull { name ->
-                            customizationOriginalIngredients.find {
-                                it.name.equals(name, ignoreCase = true)
+                        // Use fuzzy matching since Gemini may return "2 pieces salmon fillets (pat dry)"
+                        // when the original ingredient is just "Salmon Fillets"
+                        val removedWithQuantities = current.customization.ingredientsToRemove.mapNotNull { removeStr ->
+                            customizationOriginalIngredients.find { original ->
+                                ingredientNameMatches(original.name, removeStr)
                             }
                         }
 
                         android.util.Log.d("RecipeDetailVM", "Applying targeted shopping list updates: " +
-                            "remove=${removedWithQuantities.map { "${it.quantity} ${it.name}" }}")
+                            "removeStrings=${current.customization.ingredientsToRemove}, " +
+                            "matched=${removedWithQuantities.map { "${it.quantity} ${it.name}" }}")
                         shoppingRepository.applyRecipeCustomization(
                             mealPlanId = mealPlanId,
                             ingredientsToRemove = removedWithQuantities,
@@ -504,6 +507,39 @@ class RecipeDetailViewModel @Inject constructor(
     // Check if an ingredient is low stock (less than 25% remaining)
     private val PantryItem.isLowStock: Boolean
         get() = quantityInitial > 0 && (quantityRemaining / quantityInitial) < 0.25
+
+    /**
+     * Check if two ingredient names match, using fuzzy matching.
+     * Handles cases where Gemini returns "2 pieces salmon fillets (pat dry)" but
+     * the recipe ingredient is just "Salmon Fillets".
+     */
+    private fun ingredientNameMatches(ingredientName: String, searchString: String): Boolean {
+        val normalizedIngredient = normalizeIngredientName(ingredientName)
+        val normalizedSearch = normalizeIngredientName(searchString)
+
+        return normalizedIngredient.contains(normalizedSearch) ||
+               normalizedSearch.contains(normalizedIngredient)
+    }
+
+    /**
+     * Normalize ingredient name for matching - strips quantities, sizes, preparations.
+     */
+    private fun normalizeIngredientName(name: String): String {
+        return name.lowercase()
+            // Remove leading quantities like "2 pieces", "1/2 cup", "350g"
+            .replace(Regex("""^\d+(\.\d+)?\s*(pieces?|piece|g|kg|ml|l|oz|lb|cup|cups|tbsp|tsp)?\s*"""), "")
+            // Remove parenthetical notes like "(pat dry)", "(boneless)"
+            .replace(Regex("""\([^)]*\)"""), "")
+            // Size qualifiers
+            .replace("large ", "").replace("medium ", "").replace("small ", "")
+            // Freshness/state
+            .replace("fresh ", "").replace("dried ", "").replace("frozen ", "").replace("canned ", "")
+            // Preparation styles
+            .replace("chopped ", "").replace("minced ", "").replace("diced ", "")
+            .replace("sliced ", "").replace("whole ", "").replace("ground ", "")
+            .replace("crushed ", "").replace("grated ", "").replace("shredded ", "")
+            .trim()
+    }
 }
 
 enum class IngredientStatus {
