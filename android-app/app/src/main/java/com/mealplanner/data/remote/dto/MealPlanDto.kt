@@ -258,3 +258,18 @@ data class ModifiedIngredientDto(
     val newUnit: String? = null,
     val newPreparation: String? = null
 )
+
+// Shopping list update DTOs (for recipe customization)
+@Serializable
+data class ShoppingListUpdateRequest(
+    val currentItems: List<PolishedGroceryItemDto>,
+    val ingredientsToAdd: List<RecipeIngredientDto>,
+    val ingredientsToRemove: List<RecipeIngredientDto>,
+    val ingredientsToModify: List<ModifiedIngredientDto>,
+    val recipeName: String
+)
+
+@Serializable
+data class ShoppingListUpdateResponse(
+    val items: List<PolishedGroceryItemDto>
+)

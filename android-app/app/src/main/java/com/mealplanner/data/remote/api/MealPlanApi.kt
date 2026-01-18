@@ -13,6 +13,8 @@ import com.mealplanner.data.remote.dto.SubstitutionRequest
 import com.mealplanner.data.remote.dto.SubstitutionResponse
 import com.mealplanner.data.remote.dto.RecipeCustomizationRequest
 import com.mealplanner.data.remote.dto.RecipeCustomizationResponse
+import com.mealplanner.data.remote.dto.ShoppingListUpdateRequest
+import com.mealplanner.data.remote.dto.ShoppingListUpdateResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -94,4 +96,10 @@ interface MealPlanApi {
     suspend fun customizeRecipe(
         @Body request: RecipeCustomizationRequest
     ): RecipeCustomizationResponse
+
+    // Shopping list update (after recipe customization)
+    @POST("api/meal-plan/update-shopping-list")
+    suspend fun updateShoppingList(
+        @Body request: ShoppingListUpdateRequest
+    ): ShoppingListUpdateResponse
 }

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { loadRecipes } from '../services/recipeService.js';
-import { generateMealPlan, polishGroceryList, categorizePantryItems, processSubstitution, customizeRecipe } from '../services/geminiService.js';
+import { generateMealPlan, polishGroceryList, categorizePantryItems, processSubstitution, customizeRecipe, updateShoppingListForCustomization } from '../services/geminiService.js';
 import {
   createJob,
   getJob,
@@ -24,7 +24,7 @@ import {
   failPantryCategorizeJob,
   deletePantryCategorizeJob,
 } from '../services/jobService.js';
-import type { MealPlanRequest, ProgressEvent, GroceryPolishRequest, GroceryPolishProgress, PantryCategorizeRequest, PantryCategorizeProgress, SubstitutionRequest, RecipeCustomizationRequest } from '../types.js';
+import type { MealPlanRequest, ProgressEvent, GroceryPolishRequest, GroceryPolishProgress, PantryCategorizeRequest, PantryCategorizeProgress, SubstitutionRequest, RecipeCustomizationRequest, ShoppingListUpdateRequest } from '../types.js';
 
 const router = Router();
 
@@ -609,6 +609,48 @@ router.post('/customize-recipe', async (req, res) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[Customization] Error: ${message}`);
+    res.status(500).json({ error: message });
+  }
+});
+
+// Update shopping list after recipe customization
+router.post('/update-shopping-list', async (req, res) => {
+  const apiKey = (req.headers['x-gemini-key'] as string) || process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    return res.status(401).json({ error: 'Gemini API key required in X-Gemini-Key header or GEMINI_API_KEY env var' });
+  }
+
+  const request = req.body as ShoppingListUpdateRequest;
+
+  // Validate request
+  if (!request.currentItems || !Array.isArray(request.currentItems)) {
+    return res.status(400).json({ error: 'currentItems must be an array' });
+  }
+
+  if (!request.recipeName) {
+    return res.status(400).json({ error: 'recipeName is required' });
+  }
+
+  // Ensure arrays exist
+  const ingredientsToAdd = request.ingredientsToAdd || [];
+  const ingredientsToRemove = request.ingredientsToRemove || [];
+  const ingredientsToModify = request.ingredientsToModify || [];
+
+  try {
+    console.log(`[ShoppingUpdate] Updating shopping list for "${request.recipeName}"`);
+    const result = await updateShoppingListForCustomization(
+      apiKey,
+      request.currentItems,
+      ingredientsToAdd,
+      ingredientsToRemove,
+      ingredientsToModify,
+      request.recipeName
+    );
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[ShoppingUpdate] Error: ${message}`);
     res.status(500).json({ error: message });
   }
 });

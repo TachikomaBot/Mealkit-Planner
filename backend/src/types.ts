@@ -268,3 +268,16 @@ export interface RecipeCustomizationResponse {
   changesSummary: string;                  // Human-readable summary of changes
   notes: string | null;
 }
+
+// Shopping list update types (for recipe customization)
+export interface ShoppingListUpdateRequest {
+  currentItems: PolishedGroceryItem[];      // Current polished shopping list
+  ingredientsToAdd: RecipeIngredient[];     // Ingredients to add from customization
+  ingredientsToRemove: RecipeIngredient[];  // Ingredients to remove (with quantities)
+  ingredientsToModify: ModifiedIngredient[];
+  recipeName: string;                       // For context in prompt
+}
+
+export interface ShoppingListUpdateResponse {
+  items: PolishedGroceryItem[];             // Updated polished list
+}

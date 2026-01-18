@@ -434,26 +434,31 @@ class RecipeDetailViewModel @Inject constructor(
                     // Refresh the recipe UI immediately
                     refreshPlannedRecipe()
 
-                    // Apply targeted updates to shopping list (preserves polished quantities)
+                    // Update shopping list via Gemini (proper polish, semantic matching)
                     mealPlanRepository.getCurrentMealPlan()?.id?.let { mealPlanId ->
                         // Map removed ingredient names to full RecipeIngredient with quantities
-                        // Use fuzzy matching since Gemini may return "2 pieces salmon fillets (pat dry)"
-                        // when the original ingredient is just "Salmon Fillets"
                         val removedWithQuantities = current.customization.ingredientsToRemove.mapNotNull { removeStr ->
                             customizationOriginalIngredients.find { original ->
                                 ingredientNameMatches(original.name, removeStr)
                             }
                         }
 
-                        android.util.Log.d("RecipeDetailVM", "Applying targeted shopping list updates: " +
-                            "removeStrings=${current.customization.ingredientsToRemove}, " +
-                            "matched=${removedWithQuantities.map { "${it.quantity} ${it.name}" }}")
-                        shoppingRepository.applyRecipeCustomization(
+                        android.util.Log.d("RecipeDetailVM", "Updating shopping list via Gemini: " +
+                            "add=${current.customization.ingredientsToAdd.size}, " +
+                            "remove=${removedWithQuantities.size}, " +
+                            "modify=${current.customization.ingredientsToModify.size}")
+
+                        val shoppingResult = shoppingRepository.updateShoppingListAfterCustomization(
                             mealPlanId = mealPlanId,
-                            ingredientsToRemove = removedWithQuantities,
                             ingredientsToAdd = current.customization.ingredientsToAdd,
-                            ingredientsToModify = current.customization.ingredientsToModify
+                            ingredientsToRemove = removedWithQuantities,
+                            ingredientsToModify = current.customization.ingredientsToModify,
+                            recipeName = current.recipe.name
                         )
+
+                        shoppingResult.onFailure { error ->
+                            android.util.Log.e("RecipeDetailVM", "Shopping list update failed: ${error.message}")
+                        }
                     }
 
                     _customizationState.value = CustomizationState.Idle

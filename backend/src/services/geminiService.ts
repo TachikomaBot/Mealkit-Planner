@@ -3,7 +3,10 @@ import { searchRecipes, getRecipeBySourceId } from './recipeService.js';
 import type {
   GeneratedRecipe,
   MealPlanRequest,
+  ModifiedIngredient,
   PantryItem,
+  PolishedGroceryItem,
+  RecipeIngredient,
   UserPreferences,
   ProgressEvent,
   SubstitutionRequest,
@@ -1892,5 +1895,148 @@ Return JSON:
   } catch (error) {
     console.error('[Customization] Error:', error);
     throw error;  // Let the route handler deal with the error
+  }
+}
+
+// ============================================================================
+// Shopping List Update (for Recipe Customization)
+// ============================================================================
+
+/**
+ * Update a shopping list after recipe customization using Gemini AI.
+ * Handles adding, removing, and modifying ingredients intelligently.
+ */
+export async function updateShoppingListForCustomization(
+  apiKey: string,
+  currentItems: PolishedGroceryItem[],
+  ingredientsToAdd: RecipeIngredient[],
+  ingredientsToRemove: RecipeIngredient[],
+  ingredientsToModify: ModifiedIngredient[],
+  recipeName: string
+): Promise<{ items: PolishedGroceryItem[] }> {
+  console.log(`[ShoppingUpdate] Updating shopping list for "${recipeName}"`);
+  console.log(`[ShoppingUpdate] Current items: ${currentItems.length}, Add: ${ingredientsToAdd.length}, Remove: ${ingredientsToRemove.length}, Modify: ${ingredientsToModify.length}`);
+
+  if (!apiKey) {
+    throw new Error('Gemini API key is required');
+  }
+
+  // If no changes, return current items unchanged
+  if (ingredientsToAdd.length === 0 && ingredientsToRemove.length === 0 && ingredientsToModify.length === 0) {
+    console.log('[ShoppingUpdate] No changes to apply');
+    return { items: currentItems };
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  // Build the changes description
+  const changesDescription = [];
+
+  if (ingredientsToRemove.length > 0) {
+    changesDescription.push(`REMOVE from "${recipeName}":\n${ingredientsToRemove.map(i =>
+      `  - ${i.quantity} ${i.unit} ${i.ingredientName}`.trim()
+    ).join('\n')}`);
+  }
+
+  if (ingredientsToAdd.length > 0) {
+    changesDescription.push(`ADD from "${recipeName}":\n${ingredientsToAdd.map(i =>
+      `  - ${i.quantity} ${i.unit} ${i.ingredientName}${i.preparation ? ` (${i.preparation})` : ''}`.trim()
+    ).join('\n')}`);
+  }
+
+  if (ingredientsToModify.length > 0) {
+    changesDescription.push(`MODIFY:\n${ingredientsToModify.map(m => {
+      const changes = [];
+      if (m.newName) changes.push(`name: "${m.originalName}" → "${m.newName}"`);
+      if (m.newQuantity !== null) changes.push(`qty: ${m.newQuantity}`);
+      if (m.newUnit) changes.push(`unit: ${m.newUnit}`);
+      return `  - ${m.originalName}: ${changes.join(', ')}`;
+    }).join('\n')}`);
+  }
+
+  const prompt = `You are updating an existing shopping list after a recipe was customized.
+
+CURRENT SHOPPING LIST:
+${JSON.stringify(currentItems, null, 2)}
+
+CHANGES TO APPLY:
+${changesDescription.join('\n\n')}
+
+YOUR TASK:
+
+1. For REMOVED ingredients:
+   - Find the matching shopping item (use semantic matching: "shrimp" matches "Shrimp (peeled and deveined)")
+   - SUBTRACT the removed quantity from the shopping item
+   - If the quantity reaches 0 or below, REMOVE the item entirely
+   - Example: "Chicken Thighs: 450g (4 pieces)" minus "2 pieces chicken thighs" = "Chicken Thighs: 225g (2 pieces)"
+
+2. For ADDED ingredients:
+   - Check if a similar item already exists (semantic match)
+   - If exists: ADD the quantities together
+   - If new: Create a polished entry
+   - Use the SAME formatting as existing items
+
+3. For MODIFIED ingredients:
+   - Find and update the matching item's name/quantity as specified
+
+4. KEEP all unchanged items EXACTLY as they are (same name, displayQuantity, category)
+
+FORMATTING RULES (same as grocery polish):
+- Use METRIC units: grams for protein (not pounds), ml for liquids
+- Protein format: "450g (2 pieces)" or "500g"
+- Produce format: "2 medium carrots", "1 small head lettuce"
+- Proper capitalization: "Chicken Thighs" not "chicken thighs"
+- Round weights to end in 0 or 5: 340g → 350g, 227g → 225g
+- NO cups, tablespoons, teaspoons in displayQuantity
+
+CATEGORIES (use exactly one):
+Produce, Protein, Dairy, Bakery, Pantry, Frozen, Condiments, Spices
+
+Return the COMPLETE updated shopping list as JSON:
+{
+  "items": [
+    { "name": "...", "displayQuantity": "...", "category": "..." },
+    ...
+  ]
+}`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        temperature: 0.2,
+        maxOutputTokens: 16000,
+      }
+    });
+
+    const text = response.text?.trim() || '';
+    console.log('[ShoppingUpdate] Got response, parsing...');
+
+    // Parse the response
+    let result: { items: PolishedGroceryItem[] };
+    try {
+      result = JSON.parse(text);
+    } catch (parseError) {
+      // Try to extract JSON from the response
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        result = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error('Failed to parse response as JSON');
+      }
+    }
+
+    if (!result.items || !Array.isArray(result.items)) {
+      throw new Error('Invalid response structure - missing items array');
+    }
+
+    console.log(`[ShoppingUpdate] Updated: ${currentItems.length} → ${result.items.length} items`);
+
+    return result;
+  } catch (error) {
+    console.error('[ShoppingUpdate] Error:', error);
+    throw error;
   }
 }

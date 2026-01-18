@@ -12,9 +12,13 @@ import com.mealplanner.data.remote.dto.CategorizedPantryItemDto
 import com.mealplanner.data.remote.dto.GroceryIngredientDto
 import com.mealplanner.data.remote.dto.GroceryPolishRequest
 import com.mealplanner.data.remote.dto.GroceryPolishResponse
+import com.mealplanner.data.remote.dto.ModifiedIngredientDto
 import com.mealplanner.data.remote.dto.PantryCategorizeRequest
 import com.mealplanner.data.remote.dto.PantryItemDto
+import com.mealplanner.data.remote.dto.PolishedGroceryItemDto
+import com.mealplanner.data.remote.dto.RecipeIngredientDto
 import com.mealplanner.data.remote.dto.ShoppingItemForPantryDto
+import com.mealplanner.data.remote.dto.ShoppingListUpdateRequest
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import com.mealplanner.domain.model.IngredientSource
@@ -800,112 +804,99 @@ class ShoppingRepositoryImpl @Inject constructor(
             Unit
         }
 
-    override suspend fun applyRecipeCustomization(
+    override suspend fun updateShoppingListAfterCustomization(
         mealPlanId: Long,
-        ingredientsToRemove: List<RecipeIngredient>,
         ingredientsToAdd: List<RecipeIngredient>,
-        ingredientsToModify: List<ModifiedIngredient>
-    ): Unit = withContext(Dispatchers.IO) {
-        android.util.Log.d("ShoppingRepo", "Applying recipe customization: " +
-            "remove=${ingredientsToRemove.size}, add=${ingredientsToAdd.size}, modify=${ingredientsToModify.size}")
+        ingredientsToRemove: List<RecipeIngredient>,
+        ingredientsToModify: List<ModifiedIngredient>,
+        recipeName: String
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            android.util.Log.d("ShoppingRepo", "Updating shopping list via Gemini for '$recipeName': " +
+                "add=${ingredientsToAdd.size}, remove=${ingredientsToRemove.size}, modify=${ingredientsToModify.size}")
 
-        val currentItems = shoppingDao.getItemsForMealPlan(mealPlanId)
-
-        // 1. Subtract quantities for removed ingredients (only delete if quantity reaches zero)
-        for (ingredient in ingredientsToRemove) {
-            val normalizedRemove = normalizeForSourceMatch(ingredient.name)
-            val matchingItems = currentItems.filter { item ->
-                val normalizedItem = normalizeForSourceMatch(item.ingredientName)
-                normalizedItem.contains(normalizedRemove) || normalizedRemove.contains(normalizedItem)
-            }
-            for (item in matchingItems) {
-                val currentQty = extractQuantityFromDisplay(item.polishedDisplayQuantity)
-                    ?: item.quantity.takeIf { it > 0 }
-                    ?: ingredient.quantity  // Fallback: assume single recipe contribution
-
-                val newQty = currentQty - ingredient.quantity
-
-                if (newQty <= 0) {
-                    // Quantity exhausted - delete the item
-                    android.util.Log.d("ShoppingRepo", "Removing item: ${item.ingredientName} (qty $currentQty - ${ingredient.quantity} = $newQty)")
-                    shoppingDao.deleteItem(item.id)
-                } else {
-                    // Reduce quantity - update display
-                    val newDisplay = updateQuantityInDisplay(item.polishedDisplayQuantity, newQty)
-                        ?: "${newQty.formatForDisplay()} ${item.ingredientName}"
-                    android.util.Log.d("ShoppingRepo", "Reducing item: ${item.ingredientName} from $currentQty to $newQty")
-                    shoppingDao.updateItemNameAndQuantity(item.id, item.ingredientName, newDisplay)
-                }
-            }
-        }
-
-        // 2. Update items matching modified ingredients
-        for (modification in ingredientsToModify) {
-            if (modification.newName == null) continue  // No name change
-
-            val normalizedOriginal = normalizeForSourceMatch(modification.originalName)
-            val matchingItems = currentItems.filter { item ->
-                val normalizedItem = normalizeForSourceMatch(item.ingredientName)
-                normalizedItem.contains(normalizedOriginal) || normalizedOriginal.contains(normalizedItem)
-            }
-            for (item in matchingItems) {
-                // Build new display quantity if quantity/unit changed
-                val newDisplayQty = if (modification.newQuantity != null || modification.newUnit != null) {
-                    val qty = modification.newQuantity ?: item.quantity
-                    val unit = modification.newUnit ?: item.unit
-                    "$qty $unit".trim()
-                } else {
-                    item.polishedDisplayQuantity ?: "${item.quantity} ${item.unit}".trim()
-                }
-
-                android.util.Log.d("ShoppingRepo", "Updating item: ${item.ingredientName} -> ${modification.newName}")
-                shoppingDao.updateItemNameAndQuantity(item.id, modification.newName, newDisplayQty)
-            }
-        }
-
-        // 3. Add new items for added ingredients (merge with existing if similar item exists)
-        // Re-fetch current items since we may have modified some above
-        val updatedItems = shoppingDao.getItemsForMealPlan(mealPlanId)
-
-        for (ingredient in ingredientsToAdd) {
-            val normalizedNew = normalizeForSourceMatch(ingredient.name)
-
-            // Check if a similar ingredient already exists in the shopping list
-            val existingItem = updatedItems.find { item ->
-                val normalizedExisting = normalizeForSourceMatch(item.ingredientName)
-                normalizedExisting.contains(normalizedNew) || normalizedNew.contains(normalizedExisting)
+            // 1. Get current shopping items
+            val currentItems = shoppingDao.getItemsForMealPlan(mealPlanId)
+            if (currentItems.isEmpty()) {
+                android.util.Log.d("ShoppingRepo", "No shopping items to update")
+                return@withContext Result.success(Unit)
             }
 
-            if (existingItem != null) {
-                // Merge with existing item - add quantities
-                val existingQty = extractQuantityFromDisplay(existingItem.polishedDisplayQuantity)
-                    ?: existingItem.quantity.takeIf { it > 0 }
-                    ?: 0.0
-                val newTotalQty = existingQty + ingredient.quantity
-                val newDisplay = updateQuantityInDisplay(existingItem.polishedDisplayQuantity, newTotalQty)
-                    ?: "${newTotalQty.formatForDisplay()} ${existingItem.ingredientName}"
+            // 2. Convert to DTOs for API
+            val currentItemDtos = currentItems.map { item ->
+                PolishedGroceryItemDto(
+                    name = item.ingredientName,
+                    displayQuantity = item.polishedDisplayQuantity ?: "${item.quantity} ${item.unit}".trim(),
+                    category = item.category
+                )
+            }
 
-                android.util.Log.d("ShoppingRepo", "Merging ingredient: ${ingredient.name} into ${existingItem.ingredientName}, " +
-                    "qty $existingQty + ${ingredient.quantity} = $newTotalQty")
-                shoppingDao.updateItemNameAndQuantity(existingItem.id, existingItem.ingredientName, newDisplay)
-            } else {
-                // No existing item - create new
-                val displayQty = "${ingredient.quantity} ${ingredient.unit}".trim()
-                val newItem = ShoppingItemEntity(
+            val addDtos = ingredientsToAdd.map { ing ->
+                RecipeIngredientDto(
+                    ingredientName = ing.name,
+                    quantity = ing.quantity,
+                    unit = ing.unit,
+                    preparation = ing.preparation
+                )
+            }
+
+            val removeDtos = ingredientsToRemove.map { ing ->
+                RecipeIngredientDto(
+                    ingredientName = ing.name,
+                    quantity = ing.quantity,
+                    unit = ing.unit,
+                    preparation = ing.preparation
+                )
+            }
+
+            val modifyDtos = ingredientsToModify.map { mod ->
+                ModifiedIngredientDto(
+                    originalName = mod.originalName,
+                    newName = mod.newName,
+                    newQuantity = mod.newQuantity,
+                    newUnit = mod.newUnit,
+                    newPreparation = mod.newPreparation
+                )
+            }
+
+            // 3. Call API
+            val request = ShoppingListUpdateRequest(
+                currentItems = currentItemDtos,
+                ingredientsToAdd = addDtos,
+                ingredientsToRemove = removeDtos,
+                ingredientsToModify = modifyDtos,
+                recipeName = recipeName
+            )
+
+            android.util.Log.d("ShoppingRepo", "Calling update-shopping-list API...")
+            val response = mealPlanApi.updateShoppingList(request)
+
+            // 4. Replace shopping items with updated list
+            android.util.Log.d("ShoppingRepo", "Got ${response.items.size} items from API, replacing in DB...")
+
+            // Delete all existing items for this meal plan
+            shoppingDao.deleteByMealPlanId(mealPlanId)
+
+            // Insert new items
+            val newEntities = response.items.map { item ->
+                ShoppingItemEntity(
                     mealPlanId = mealPlanId,
-                    ingredientName = ingredient.name,
-                    quantity = ingredient.quantity,
-                    unit = ingredient.unit,
-                    category = ShoppingCategories.OTHER,  // Will be categorized on next polish
-                    polishedDisplayQuantity = displayQty,
+                    ingredientName = item.name,
+                    quantity = 0.0,  // Not used after polish
+                    unit = "",
+                    category = item.category,
+                    polishedDisplayQuantity = item.displayQuantity,
                     notes = null
                 )
-                val newId = shoppingDao.insertItem(newItem)
-                android.util.Log.d("ShoppingRepo", "Added new item: ${ingredient.name} ($displayQty) with id=$newId")
             }
-        }
+            shoppingDao.insertItems(newEntities)
 
-        android.util.Log.d("ShoppingRepo", "Recipe customization applied to shopping list")
+            android.util.Log.d("ShoppingRepo", "Shopping list updated: ${currentItems.size} → ${response.items.size} items")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            android.util.Log.e("ShoppingRepo", "Failed to update shopping list: ${e.message}", e)
+            Result.failure(e)
+        }
     }
 
     /**

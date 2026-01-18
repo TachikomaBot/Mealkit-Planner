@@ -125,17 +125,22 @@ interface ShoppingRepository {
     suspend fun cleanupStaleJobs()
 
     /**
-     * Apply recipe customization changes to the shopping list.
-     * Does targeted add/remove/update instead of regenerating the whole list.
-     * Preserves polished display quantities and checked states for unchanged items.
+     * Update the shopping list after recipe customization using Gemini AI.
+     * Intelligently handles adding, removing, and modifying ingredients with proper
+     * polishing (metric units, correct categories, proper capitalization).
      *
-     * For removed ingredients, quantities are subtracted from matching shopping items.
-     * Items are only deleted if their quantity reaches zero.
+     * @param mealPlanId The meal plan to update
+     * @param ingredientsToAdd Ingredients to add (from customization result)
+     * @param ingredientsToRemove Ingredients to remove (with quantities)
+     * @param ingredientsToModify Ingredients to modify
+     * @param recipeName The recipe being customized (for context)
+     * @return Result with updated shopping list
      */
-    suspend fun applyRecipeCustomization(
+    suspend fun updateShoppingListAfterCustomization(
         mealPlanId: Long,
-        ingredientsToRemove: List<RecipeIngredient>,
         ingredientsToAdd: List<RecipeIngredient>,
-        ingredientsToModify: List<ModifiedIngredient>
-    )
+        ingredientsToRemove: List<RecipeIngredient>,
+        ingredientsToModify: List<ModifiedIngredient>,
+        recipeName: String
+    ): Result<Unit>
 }
