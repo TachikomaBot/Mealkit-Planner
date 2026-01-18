@@ -4,26 +4,26 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 
 /**
- * How an item's availability should be tracked
+ * How an item's availability should be tracked.
+ *
+ * Simplified to TWO types based on subdivision behavior:
+ * - UNITS: Discrete countable items that maintain identity (apples, eggs, chicken breasts)
+ * - STOCK_LEVEL: Items subdivided imprecisely where you'd ask "how much is left?" (ground beef, flour, oil)
  */
 enum class TrackingStyle {
     /**
+     * Track as discrete countable units (6 apples → use 2 → 4 apples).
+     * Best for: produce (apples, onions), portioned proteins (chicken breasts, salmon fillets),
+     * packaged items (cans, jars, boxes), eggs.
+     */
+    UNITS,
+
+    /**
      * Track as stock level (out, low, some, plenty).
-     * Best for: spices, oils, condiments - items where precise quantity doesn't matter.
+     * Best for: items subdivided imprecisely where you'd ask "how much is left?" after use.
+     * Examples: ground beef, milk, flour, rice, oils, spices, condiments.
      */
-    STOCK_LEVEL,
-
-    /**
-     * Track as discrete count (2 cans, 3 bottles).
-     * Best for: canned goods, jars, boxes - items bought in units.
-     */
-    COUNT,
-
-    /**
-     * Track precise quantity (500g, 1L).
-     * Best for: perishables, proteins, produce - items where amount matters.
-     */
-    PRECISE
+    STOCK_LEVEL
 }
 
 /**
@@ -61,7 +61,7 @@ data class PantryItem(
     val quantityRemaining: Double,
     val unit: PantryUnit,
     val category: PantryCategory,
-    val trackingStyle: TrackingStyle = TrackingStyle.PRECISE,
+    val trackingStyle: TrackingStyle = TrackingStyle.UNITS,
     val stockLevel: StockLevel = StockLevel.PLENTY,
     val perishable: Boolean = false,
     val expiryDate: LocalDate? = null,
@@ -124,12 +124,12 @@ data class PantryItem(
     val needsStockCheck: Boolean get() = needsAttention
 
     /**
-     * Get the effective stock level, computed from quantity for PRECISE/COUNT items
+     * Get the effective stock level, computed from quantity for UNITS items
      */
     val effectiveStockLevel: StockLevel
         get() = when (trackingStyle) {
             TrackingStyle.STOCK_LEVEL -> stockLevel
-            TrackingStyle.COUNT, TrackingStyle.PRECISE -> StockLevel.fromPercentage(percentRemaining)
+            TrackingStyle.UNITS -> StockLevel.fromPercentage(percentRemaining)
         }
 
     /**
@@ -138,7 +138,7 @@ data class PantryItem(
     val availabilityDescription: String
         get() = when (trackingStyle) {
             TrackingStyle.STOCK_LEVEL -> stockLevel.displayName
-            TrackingStyle.COUNT, TrackingStyle.PRECISE -> {
+            TrackingStyle.UNITS -> {
                 val qty = quantityRemaining.toInt()
                 val unitStr = unit.pluralize(qty)
                 "$qty $unitStr"
@@ -146,63 +146,61 @@ data class PantryItem(
         }
 
     companion object {
-        // Patterns for items that should use COUNT tracking (discrete countable items)
-        private val countPatterns = listOf(
-            "canned", "can of", "jar", "bottle", "box", "packet", "package",
-            "bag of", "carton", "tin"
+        // Patterns for items that should use STOCK_LEVEL (subdivided imprecisely)
+        private val stockLevelPatterns = listOf(
+            // Bulk proteins (ground/minced meat)
+            "ground", "minced", "mince",
+            // Dairy (poured/sliced)
+            "milk", "cream", "yogurt", "cheese", "butter",
+            // Bulk dry goods (scooped from bulk)
+            "flour", "sugar", "rice", "pasta", "oats",
+            // Liquids
+            "oil", "vinegar", "sauce", "broth", "stock"
         )
 
-        // Patterns for items that should always use PRECISE tracking regardless of category
-        private val precisePatterns = listOf(
-            "chicken", "beef", "pork", "lamb", "fish", "salmon", "shrimp", "turkey",
-            "milk", "cream", "yogurt", "cheese", "egg"
+        // Patterns for items that should use UNITS (discrete countable)
+        private val unitsPatterns = listOf(
+            // Produce
+            "egg", "apple", "onion", "carrot", "potato", "lemon", "lime", "tomato",
+            // Portioned proteins
+            "chicken breast", "salmon fillet", "steak", "chop", "thigh", "drumstick",
+            // Packaged items
+            "can of", "canned", "jar", "bottle", "box", "packet", "package", "carton", "tin"
         )
 
         /**
          * Determine the smart default tracking style based on category and item name.
-         * Users can override this, but this provides sensible defaults.
+         * Uses simplified TWO-type system:
+         * - UNITS: discrete countable items that maintain identity
+         * - STOCK_LEVEL: items subdivided imprecisely
          */
         fun smartTrackingStyle(name: String, category: PantryCategory): TrackingStyle {
             val lowerName = name.lowercase()
 
-            // Check for precise patterns first (meats, dairy, etc.)
-            if (precisePatterns.any { lowerName.contains(it) }) {
-                return TrackingStyle.PRECISE
+            // Check for STOCK_LEVEL patterns first (subdivided imprecisely)
+            if (stockLevelPatterns.any { lowerName.contains(it) }) {
+                return TrackingStyle.STOCK_LEVEL
             }
 
-            // Check for count patterns (canned goods, jars, etc.)
-            if (countPatterns.any { lowerName.contains(it) }) {
-                return TrackingStyle.COUNT
+            // Check for UNITS patterns (discrete countable)
+            if (unitsPatterns.any { lowerName.contains(it) }) {
+                return TrackingStyle.UNITS
             }
 
             // Category-based defaults
             return when (category) {
-                // Shelf-stable items where precise quantity doesn't matter
+                // STOCK_LEVEL categories (subdivided imprecisely)
                 PantryCategory.SPICE,
                 PantryCategory.OILS,
-                PantryCategory.CONDIMENT -> TrackingStyle.STOCK_LEVEL
+                PantryCategory.CONDIMENT,
+                PantryCategory.DRY_GOODS,
+                PantryCategory.FROZEN,
+                PantryCategory.DAIRY -> TrackingStyle.STOCK_LEVEL
 
-                // Dry goods default to stock level, but canned items handled above
-                PantryCategory.DRY_GOODS -> {
-                    // Items like flour, rice, sugar, pasta - stock level is fine
-                    if (lowerName.contains("flour") || lowerName.contains("rice") ||
-                        lowerName.contains("sugar") || lowerName.contains("pasta") ||
-                        lowerName.contains("cereal") || lowerName.contains("oats")
-                    ) {
-                        TrackingStyle.STOCK_LEVEL
-                    } else {
-                        // Default to precise for unknown dry goods
-                        TrackingStyle.PRECISE
-                    }
-                }
-
-                // Perishables need precise tracking
+                // UNITS categories (discrete countable)
                 PantryCategory.PRODUCE,
                 PantryCategory.PROTEIN,
-                PantryCategory.DAIRY,
-                PantryCategory.FROZEN -> TrackingStyle.PRECISE
-
-                PantryCategory.OTHER -> TrackingStyle.PRECISE
+                PantryCategory.OTHER -> TrackingStyle.UNITS
             }
         }
     }

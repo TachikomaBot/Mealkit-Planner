@@ -1419,10 +1419,17 @@ CATEGORY - Assign based on what the item IS:
 - "FROZEN" = Anything frozen (frozen peas, frozen berries)
 - "OTHER" = Only if nothing else fits
 
-TRACKING STYLE:
-- "STOCK_LEVEL" with stockLevel="FULL" for: oils, spices, condiments, flour, sugar, rice
-- "PRECISE" with stockLevel=null for: produce, proteins, dairy, frozen
-- For EGGS: use "PRECISE" with unit="COUNT" - convert cartons to individual eggs (1 carton = 12 eggs)
+TRACKING STYLE - Simplified to 2 types based on subdivision behavior:
+- "STOCK_LEVEL" with stockLevel="FULL" for: items subdivided imprecisely (oils, spices, condiments, flour, sugar, rice, ground beef, milk, cheese)
+- "UNITS" with stockLevel=null for: discrete countable items (produce, portioned proteins, eggs, canned goods)
+
+Examples:
+- Eggs → UNITS (countable)
+- Chicken breasts → UNITS (countable portions)
+- Ground beef → STOCK_LEVEL (subdivided imprecisely)
+- Milk → STOCK_LEVEL (poured, not counted)
+- Apples → UNITS (countable)
+- Canned tomatoes → UNITS (discrete cans)
 
 QUANTITY/UNIT - IMPORTANT for portioned items:
 - When an item has BOTH a count and weight (e.g. "2 chicken breasts (450g)"), PREFER THE COUNT:
@@ -1449,12 +1456,12 @@ PERISHABLE: true for PRODUCE, PROTEIN, DAIRY, FROZEN. false otherwise.
 EXAMPLE OUTPUT:
 {
   "items": [
-    {"id": 1, "name": "Salmon Fillets", "quantity": 2, "unit": "COUNT", "category": "PROTEIN", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": 3, "perishable": true},
-    {"id": 2, "name": "Chicken Breasts", "quantity": 4, "unit": "COUNT", "category": "PROTEIN", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": 4, "perishable": true},
-    {"id": 3, "name": "Fresh Basil", "quantity": 1, "unit": "BUNCH", "category": "PRODUCE", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": 4, "perishable": true},
+    {"id": 1, "name": "Salmon Fillets", "quantity": 2, "unit": "COUNT", "category": "PROTEIN", "trackingStyle": "UNITS", "stockLevel": null, "expiryDays": 3, "perishable": true},
+    {"id": 2, "name": "Chicken Breasts", "quantity": 4, "unit": "COUNT", "category": "PROTEIN", "trackingStyle": "UNITS", "stockLevel": null, "expiryDays": 4, "perishable": true},
+    {"id": 3, "name": "Fresh Basil", "quantity": 1, "unit": "BUNCH", "category": "PRODUCE", "trackingStyle": "UNITS", "stockLevel": null, "expiryDays": 4, "perishable": true},
     {"id": 4, "name": "Olive Oil", "quantity": 500, "unit": "MILLILITERS", "category": "OILS", "trackingStyle": "STOCK_LEVEL", "stockLevel": "FULL", "expiryDays": null, "perishable": false},
-    {"id": 5, "name": "Ground Beef", "quantity": 500, "unit": "GRAMS", "category": "PROTEIN", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": 5, "perishable": true},
-    {"id": 6, "name": "Eggs", "quantity": 12, "unit": "COUNT", "category": "PROTEIN", "trackingStyle": "PRECISE", "stockLevel": null, "expiryDays": 21, "perishable": true}
+    {"id": 5, "name": "Ground Beef", "quantity": 500, "unit": "GRAMS", "category": "PROTEIN", "trackingStyle": "STOCK_LEVEL", "stockLevel": "FULL", "expiryDays": 5, "perishable": true},
+    {"id": 6, "name": "Eggs", "quantity": 12, "unit": "COUNT", "category": "PROTEIN", "trackingStyle": "UNITS", "stockLevel": null, "expiryDays": 21, "perishable": true}
   ]
 }
 
@@ -1526,7 +1533,8 @@ Now categorize ALL ${items.length} input items. Use the EXACT id values from the
 }
 
 /**
- * Create a fallback categorization for an item when AI fails
+ * Create a fallback categorization for an item when AI fails.
+ * Uses simplified 2-type tracking system: UNITS (countable) vs STOCK_LEVEL (subdivided imprecisely)
  */
 function createFallbackItem(item: ShoppingItemForPantry): CategorizedPantryItem {
   // Parse quantity from display string
@@ -1535,9 +1543,29 @@ function createFallbackItem(item: ShoppingItemForPantry): CategorizedPantryItem 
   // Map shopping category to pantry category
   const category = mapShoppingCategory(item.shoppingCategory);
 
-  // Determine tracking style and perishability
+  // Determine perishability
   const isPerishable = ['PRODUCE', 'PROTEIN', 'DAIRY'].includes(category);
-  const trackingStyle = ['SPICE', 'OILS', 'CONDIMENT'].includes(category) ? 'STOCK_LEVEL' : 'PRECISE';
+
+  // Determine tracking style based on simplified 2-type system
+  // STOCK_LEVEL: items subdivided imprecisely (spices, oils, condiments, dry goods, dairy, frozen)
+  // UNITS: discrete countable items (produce, portioned proteins)
+  const lowerName = item.name.toLowerCase();
+
+  // Pattern-based overrides
+  const stockLevelPatterns = ['ground', 'minced', 'milk', 'cream', 'yogurt', 'cheese', 'butter', 'flour', 'sugar', 'rice', 'pasta', 'oil', 'sauce', 'broth', 'stock'];
+  const unitsPatterns = ['egg', 'can', 'jar', 'bottle', 'box', 'packet', 'breast', 'fillet', 'steak', 'chop', 'thigh', 'drumstick'];
+
+  let trackingStyle: string;
+  if (stockLevelPatterns.some(p => lowerName.includes(p))) {
+    trackingStyle = 'STOCK_LEVEL';
+  } else if (unitsPatterns.some(p => lowerName.includes(p))) {
+    trackingStyle = 'UNITS';
+  } else {
+    // Category-based defaults
+    trackingStyle = ['SPICE', 'OILS', 'CONDIMENT', 'DRY_GOODS', 'FROZEN', 'DAIRY'].includes(category)
+      ? 'STOCK_LEVEL'
+      : 'UNITS';
+  }
 
   return {
     id: item.id,

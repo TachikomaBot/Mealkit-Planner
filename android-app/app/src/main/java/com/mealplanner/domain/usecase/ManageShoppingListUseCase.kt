@@ -157,10 +157,16 @@ class ManageShoppingListUseCase @Inject constructor(
     private fun createPantryItemFromAI(dto: CategorizedPantryItemDto): PantryItem {
         android.util.Log.d("ShoppingUseCase", "AI item: ${dto.name} -> ${dto.category}, ${dto.trackingStyle}, qty=${dto.quantity} ${dto.unit}, expires=${dto.expiryDays}")
 
+        val parsedCategory = mapCategoryFromAI(dto.category)
+
+        // Map AI tracking style to simplified 2-type system
         val trackingStyle = when (dto.trackingStyle) {
             "STOCK_LEVEL" -> TrackingStyle.STOCK_LEVEL
-            "COUNT" -> TrackingStyle.COUNT
-            else -> TrackingStyle.PRECISE
+            "UNITS" -> TrackingStyle.UNITS
+            // Legacy mappings for backwards compatibility with AI
+            "COUNT" -> TrackingStyle.UNITS
+            "PRECISE" -> PantryItem.smartTrackingStyle(dto.name, parsedCategory)
+            else -> PantryItem.smartTrackingStyle(dto.name, parsedCategory)
         }
 
         val stockLevel = when (dto.stockLevel) {
@@ -176,7 +182,7 @@ class ManageShoppingListUseCase @Inject constructor(
             quantityInitial = dto.quantity,
             quantityRemaining = dto.quantity,
             unit = mapUnitFromAI(dto.unit),
-            category = mapCategoryFromAI(dto.category),
+            category = parsedCategory,
             trackingStyle = trackingStyle,
             stockLevel = stockLevel,
             perishable = dto.perishable,
@@ -193,12 +199,17 @@ class ManageShoppingListUseCase @Inject constructor(
         val (parsedQty, parsedUnit) = parseDisplayQuantity(item.polishedDisplayQuantity, item.quantity, item.unit)
         android.util.Log.d("ShoppingUseCase", "Local item: ${item.name}, polishedQty='${item.polishedDisplayQuantity}', rawQty=${item.quantity}, parsed: qty=$parsedQty, unit=$parsedUnit")
 
+        val parsedCategory = mapCategoryToPantry(item.category)
+        val trackingStyle = PantryItem.smartTrackingStyle(item.name, parsedCategory)
+
         return PantryItem(
             name = item.name,
             quantityInitial = parsedQty,
             quantityRemaining = parsedQty,
             unit = mapUnitToPantry(parsedUnit),
-            category = mapCategoryToPantry(item.category),
+            category = parsedCategory,
+            trackingStyle = trackingStyle,
+            stockLevel = if (trackingStyle == TrackingStyle.STOCK_LEVEL) StockLevel.PLENTY else StockLevel.PLENTY,
             perishable = isPerishableCategory(item.category),
             expiryDate = if (isPerishableCategory(item.category)) {
                 LocalDate.now().plusDays(7) // Default 7 day expiry for perishables

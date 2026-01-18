@@ -18,7 +18,7 @@ data class PantryEntity(
     val quantityRemaining: Double,
     val unit: String, // Store as string for simplicity
     val category: String, // Store as string for simplicity
-    val trackingStyle: String = TrackingStyle.PRECISE.name,
+    val trackingStyle: String = TrackingStyle.UNITS.name,
     val stockLevel: String = StockLevel.PLENTY.name,
     val perishable: Boolean = false,
     val expiryDate: Long? = null, // Epoch millis
@@ -29,11 +29,14 @@ data class PantryEntity(
 ) {
     fun toDomain(): PantryItem {
         val parsedCategory = PantryCategory.fromString(category)
-        val parsedTrackingStyle = try {
-            TrackingStyle.valueOf(trackingStyle)
-        } catch (e: IllegalArgumentException) {
-            // Fallback: compute smart default if stored value is invalid
-            PantryItem.smartTrackingStyle(name, parsedCategory)
+
+        // Handle legacy tracking styles during migration to simplified 2-type system
+        val parsedTrackingStyle = when (trackingStyle) {
+            "UNITS" -> TrackingStyle.UNITS
+            "COUNT" -> TrackingStyle.UNITS  // Legacy COUNT → UNITS (direct mapping)
+            "STOCK_LEVEL" -> TrackingStyle.STOCK_LEVEL
+            "PRECISE" -> PantryItem.smartTrackingStyle(name, parsedCategory)  // Legacy PRECISE → determine from name/category
+            else -> PantryItem.smartTrackingStyle(name, parsedCategory)  // Unknown → compute smart default
         }
 
         return PantryItem(

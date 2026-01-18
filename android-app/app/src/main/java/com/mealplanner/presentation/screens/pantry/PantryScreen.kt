@@ -318,7 +318,7 @@ private fun IngredientCard(
     isExpanded: Boolean,
     onClick: () -> Unit
 ) {
-    // For visual fill, use effective stock level for STOCK_LEVEL items
+    // For visual fill, use effective stock level for STOCK_LEVEL items, percentRemaining for UNITS
     val fillPercent = when (item.trackingStyle) {
         TrackingStyle.STOCK_LEVEL -> when (item.effectiveStockLevel) {
             StockLevel.OUT_OF_STOCK -> 0f
@@ -326,7 +326,7 @@ private fun IngredientCard(
             StockLevel.SOME -> 0.5f
             StockLevel.PLENTY -> 0.85f
         }
-        else -> item.percentRemaining
+        TrackingStyle.UNITS -> item.percentRemaining
     }
 
     val isLow = item.effectiveStockLevel == StockLevel.LOW ||
@@ -529,7 +529,7 @@ private fun AdjusterRow(
     // Check if values have changed from original
     val hasChanges = when (item.trackingStyle) {
         TrackingStyle.STOCK_LEVEL -> currentStockLevel != originalStockLevel
-        else -> currentQuantity != originalQuantity
+        TrackingStyle.UNITS -> currentQuantity != originalQuantity
     }
 
     // Debounce auto-save: wait 250ms after last change before saving
@@ -573,7 +573,7 @@ private fun AdjusterRow(
             )
         }
 
-        // Center content varies by tracking type
+        // Center content varies by tracking type (simplified to 2 types)
         when (item.trackingStyle) {
             TrackingStyle.STOCK_LEVEL -> {
                 // Single row of stock level chips
@@ -593,64 +593,15 @@ private fun AdjusterRow(
                     }
                 }
             }
-            TrackingStyle.COUNT -> {
-                // Minus | value | Plus
+            TrackingStyle.UNITS -> {
+                // Minus | value | Plus for discrete countable items
                 Row(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     RepeatingIconButton(
                         onClick = {
-                            val newCount = (currentQuantity - getIncrement(currentQuantity, item.quantityInitial)).coerceAtLeast(0.0)
-                            currentQuantity = newCount
-                            debounceSaveQuantity(newCount)
-                        },
-                        enabled = currentQuantity > 0,
-                        delayMillis = getRepeatDelay(currentQuantity)
-                    ) {
-                        Icon(Icons.Default.Remove, contentDescription = "Decrease")
-                    }
-
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.widthIn(min = 80.dp)
-                    ) {
-                        Text(
-                            text = formatQuantity(currentQuantity),
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            textAlign = TextAlign.Center
-                        )
-                        Text(
-                            text = item.unit.displayName,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-
-                    RepeatingIconButton(
-                        onClick = {
-                            val newCount = currentQuantity + getIncrement(currentQuantity, item.quantityInitial)
-                            currentQuantity = newCount
-                            debounceSaveQuantity(newCount)
-                        },
-                        delayMillis = getRepeatDelay(currentQuantity)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "Increase")
-                    }
-                }
-            }
-            TrackingStyle.PRECISE -> {
-                // Minus | value | Plus
-                val increment = if (currentQuantity < 5 || item.quantityInitial < 5) 0.5 else 1.0
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    RepeatingIconButton(
-                        onClick = {
-                            val newQty = (currentQuantity - increment).coerceAtLeast(0.0)
+                            val newQty = (currentQuantity - getIncrement(currentQuantity, item.quantityInitial)).coerceAtLeast(0.0)
                             currentQuantity = newQty
                             debounceSaveQuantity(newQty)
                         },
@@ -680,7 +631,7 @@ private fun AdjusterRow(
 
                     RepeatingIconButton(
                         onClick = {
-                            val newQty = currentQuantity + increment
+                            val newQty = currentQuantity + getIncrement(currentQuantity, item.quantityInitial)
                             currentQuantity = newQty
                             debounceSaveQuantity(newQty)
                         },

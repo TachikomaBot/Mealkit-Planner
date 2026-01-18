@@ -29,6 +29,7 @@ object DatabaseModule {
             MealPlannerDatabase::class.java,
             "meal_planner.db"
         )
+            .addMigrations(MealPlannerDatabase.MIGRATION_9_10)
             .fallbackToDestructiveMigration()
             .build()
     }
