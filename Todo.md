@@ -87,12 +87,15 @@
 ## Low Priority / Future
 
 ### UI/UX Polish
-- [ ] Render markdown **bold** in recipe substeps (currently plain text)
-  - Recipe steps now include `**ingredient**`, `**3 to 5 min.**`, `**medium-high**`
-  - Need to parse markdown and render with `AnnotatedString` or richtext library
-  - File: `RecipeDetailScreen.kt` line ~610
-- [ ] Smoother animation for pantry item adjustor modal swipe (feels abrupt)
-- [ ] Fix jittery animation when modal expands for expiry date field (on category change)
+- [x] Render markdown **bold** in recipe substeps - **COMPLETE**
+  - Added `parseMarkdownBold()` function using `AnnotatedString` in `RecipeDetailScreen.kt`
+- [x] Pantry adjuster redesigned as bottom overlay - **COMPLETE**
+  - Single-row layout: Delete | content | Undo
+  - Debounced auto-save (250ms) for smooth multi-adjustment sessions
+  - Blue gradient highlight on active card
+  - FAB repositions above adjuster when open
+- [x] Fix jittery animation when selecting/unselecting recipes - **COMPLETE**
+  - Removed sorting-by-selection that caused items to shift
 
 ### Data Management
 - [ ] Import/export all user data (for debugging & backup)
