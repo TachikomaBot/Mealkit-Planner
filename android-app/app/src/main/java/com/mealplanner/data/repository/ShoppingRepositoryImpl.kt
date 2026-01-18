@@ -875,7 +875,7 @@ class ShoppingRepositoryImpl @Inject constructor(
             android.util.Log.d("ShoppingRepo", "Got ${response.items.size} items from API, replacing in DB...")
 
             // Delete all existing items for this meal plan
-            shoppingDao.deleteByMealPlanId(mealPlanId)
+            shoppingDao.deleteItemsForMealPlan(mealPlanId)
 
             // Insert new items
             val newEntities = response.items.map { item ->
