@@ -18,6 +18,8 @@ import com.mealplanner.data.remote.dto.ShoppingItemForPantryDto
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import com.mealplanner.domain.model.IngredientSource
+import com.mealplanner.domain.model.ModifiedIngredient
+import com.mealplanner.domain.model.RecipeIngredient
 import com.mealplanner.domain.model.RecipeStepSource
 import com.mealplanner.domain.model.PantryItem
 import com.mealplanner.domain.model.ShoppingCategories
@@ -788,4 +790,71 @@ class ShoppingRepositoryImpl @Inject constructor(
             android.util.Log.d("ShoppingRepo", "Updated item $itemId: name='$name', qty='$displayQuantity'")
             Unit
         }
+
+    override suspend fun applyRecipeCustomization(
+        mealPlanId: Long,
+        ingredientsToRemove: List<String>,
+        ingredientsToAdd: List<RecipeIngredient>,
+        ingredientsToModify: List<ModifiedIngredient>
+    ): Unit = withContext(Dispatchers.IO) {
+        android.util.Log.d("ShoppingRepo", "Applying recipe customization: " +
+            "remove=${ingredientsToRemove.size}, add=${ingredientsToAdd.size}, modify=${ingredientsToModify.size}")
+
+        val currentItems = shoppingDao.getItemsForMealPlan(mealPlanId)
+
+        // 1. Remove items matching removed ingredients
+        for (ingredientName in ingredientsToRemove) {
+            val normalizedRemove = normalizeForSourceMatch(ingredientName)
+            val matchingItems = currentItems.filter { item ->
+                val normalizedItem = normalizeForSourceMatch(item.ingredientName)
+                normalizedItem.contains(normalizedRemove) || normalizedRemove.contains(normalizedItem)
+            }
+            for (item in matchingItems) {
+                android.util.Log.d("ShoppingRepo", "Removing item: ${item.ingredientName} (matched '$ingredientName')")
+                shoppingDao.deleteItem(item.id)
+            }
+        }
+
+        // 2. Update items matching modified ingredients
+        for (modification in ingredientsToModify) {
+            if (modification.newName == null) continue  // No name change
+
+            val normalizedOriginal = normalizeForSourceMatch(modification.originalName)
+            val matchingItems = currentItems.filter { item ->
+                val normalizedItem = normalizeForSourceMatch(item.ingredientName)
+                normalizedItem.contains(normalizedOriginal) || normalizedOriginal.contains(normalizedItem)
+            }
+            for (item in matchingItems) {
+                // Build new display quantity if quantity/unit changed
+                val newDisplayQty = if (modification.newQuantity != null || modification.newUnit != null) {
+                    val qty = modification.newQuantity ?: item.quantity
+                    val unit = modification.newUnit ?: item.unit
+                    "$qty $unit".trim()
+                } else {
+                    item.polishedDisplayQuantity ?: "${item.quantity} ${item.unit}".trim()
+                }
+
+                android.util.Log.d("ShoppingRepo", "Updating item: ${item.ingredientName} -> ${modification.newName}")
+                shoppingDao.updateItemNameAndQuantity(item.id, modification.newName, newDisplayQty)
+            }
+        }
+
+        // 3. Add new items for added ingredients
+        for (ingredient in ingredientsToAdd) {
+            val displayQty = "${ingredient.quantity} ${ingredient.unit}".trim()
+            val newItem = ShoppingItemEntity(
+                mealPlanId = mealPlanId,
+                ingredientName = ingredient.name,
+                quantity = ingredient.quantity,
+                unit = ingredient.unit,
+                category = ShoppingCategories.OTHER,  // Will be categorized on next polish
+                polishedDisplayQuantity = displayQty,
+                notes = null
+            )
+            val newId = shoppingDao.insertItem(newItem)
+            android.util.Log.d("ShoppingRepo", "Added item: ${ingredient.name} ($displayQty) with id=$newId")
+        }
+
+        android.util.Log.d("ShoppingRepo", "Recipe customization applied to shopping list")
+    }
 }

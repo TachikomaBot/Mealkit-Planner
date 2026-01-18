@@ -434,10 +434,15 @@ class RecipeDetailViewModel @Inject constructor(
                     // Refresh the recipe UI immediately
                     refreshPlannedRecipe()
 
-                    // Regenerate shopping list to reflect ingredient changes
+                    // Apply targeted updates to shopping list (preserves polished quantities)
                     mealPlanRepository.getCurrentMealPlan()?.id?.let { mealPlanId ->
-                        android.util.Log.d("RecipeDetailVM", "Regenerating shopping list after customization")
-                        shoppingRepository.generateShoppingList(mealPlanId)
+                        android.util.Log.d("RecipeDetailVM", "Applying targeted shopping list updates")
+                        shoppingRepository.applyRecipeCustomization(
+                            mealPlanId = mealPlanId,
+                            ingredientsToRemove = current.customization.ingredientsToRemove,
+                            ingredientsToAdd = current.customization.ingredientsToAdd,
+                            ingredientsToModify = current.customization.ingredientsToModify
+                        )
                     }
 
                     _customizationState.value = CustomizationState.Idle

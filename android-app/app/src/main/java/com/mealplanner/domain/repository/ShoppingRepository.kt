@@ -2,6 +2,8 @@ package com.mealplanner.domain.repository
 
 import com.mealplanner.data.remote.dto.CategorizedPantryItemDto
 import com.mealplanner.domain.model.IngredientSource
+import com.mealplanner.domain.model.ModifiedIngredient
+import com.mealplanner.domain.model.RecipeIngredient
 import com.mealplanner.domain.model.ShoppingItem
 import com.mealplanner.domain.model.ShoppingList
 import kotlinx.coroutines.flow.Flow
@@ -121,4 +123,16 @@ interface ShoppingRepository {
      * Should be called on app startup.
      */
     suspend fun cleanupStaleJobs()
+
+    /**
+     * Apply recipe customization changes to the shopping list.
+     * Does targeted add/remove/update instead of regenerating the whole list.
+     * Preserves polished display quantities and checked states for unchanged items.
+     */
+    suspend fun applyRecipeCustomization(
+        mealPlanId: Long,
+        ingredientsToRemove: List<String>,
+        ingredientsToAdd: List<RecipeIngredient>,
+        ingredientsToModify: List<ModifiedIngredient>
+    )
 }
