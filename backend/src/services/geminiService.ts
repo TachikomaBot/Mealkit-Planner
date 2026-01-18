@@ -1068,7 +1068,6 @@ function selectDefaultSix(meals: ComposedMeal[]): number[] {
 import type {
   GroceryIngredient,
   GroceryPolishResponse,
-  PolishedGroceryItem,
   GroceryPolishProgress,
   ShoppingItemForPantry,
   CategorizedPantryItem,
