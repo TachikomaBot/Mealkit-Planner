@@ -530,7 +530,7 @@ class ShoppingRepositoryImpl @Inject constructor(
         return when (pantryItem.trackingStyle) {
             TrackingStyle.STOCK_LEVEL ->
                 pantryItem.effectiveStockLevel in listOf(StockLevel.SOME, StockLevel.PLENTY)
-            TrackingStyle.COUNT, TrackingStyle.PRECISE ->
+            TrackingStyle.UNITS ->
                 pantryItem.quantityRemaining > 0 && !pantryItem.isLowStock
         }
     }

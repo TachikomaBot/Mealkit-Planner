@@ -301,8 +301,7 @@ class RecipeRepositoryImpl @Inject constructor(
     /**
      * Convert PantryItem to DTO based on its tracking style.
      * - STOCK_LEVEL: Send availability level (e.g., "plenty", "some", "low")
-     * - COUNT: Send count and unit (e.g., quantity=4, unit="cans")
-     * - PRECISE: Send precise quantity and unit (e.g., quantity=500, unit="g")
+     * - UNITS: Send count and unit (e.g., quantity=4, unit="units")
      */
     private fun PantryItem.toPantryItemDto(): PantryItemDto {
         return when (trackingStyle) {
@@ -310,12 +309,7 @@ class RecipeRepositoryImpl @Inject constructor(
                 name = name,
                 availability = effectiveStockLevel.displayName.lowercase()
             )
-            TrackingStyle.COUNT -> PantryItemDto(
-                name = name,
-                quantity = quantityRemaining.toLong().toDouble(), // Round to whole number
-                unit = unit.displayName
-            )
-            TrackingStyle.PRECISE -> PantryItemDto(
+            TrackingStyle.UNITS -> PantryItemDto(
                 name = name,
                 quantity = quantityRemaining.toLong().toDouble(), // Round to whole number
                 unit = unit.displayName
