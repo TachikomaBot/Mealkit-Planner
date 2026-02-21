@@ -44,7 +44,7 @@ router.use((_req, _res, next) => {
  *
  * Body:
  * {
- *   pantryItems: [{ name, quantity, unit }],
+ *   leftoversInput?: string,
  *   preferences: { likes: [], dislikes: [], summary: "" } | null,
  *   recentRecipeHashes: string[]
  * }
@@ -62,9 +62,6 @@ router.post('/generate', async (req, res) => {
 
   const request = req.body as MealPlanRequest;
 
-  if (!request.pantryItems) {
-    request.pantryItems = [];
-  }
   if (!request.recentRecipeHashes) {
     request.recentRecipeHashes = [];
   }
@@ -135,9 +132,6 @@ router.post('/generate-async', async (req, res) => {
 
   const request = req.body as MealPlanRequest;
 
-  if (!request.pantryItems) {
-    request.pantryItems = [];
-  }
   if (!request.recentRecipeHashes) {
     request.recentRecipeHashes = [];
   }
@@ -250,8 +244,8 @@ router.post('/generate-simple', async (req, res) => {
       tags: r.recipe.tags,
     }));
 
-    // Select default 6 with variety
-    const defaultSelections = [0, 1, 2, 3, 4, 5];
+    // Select default 4 with variety
+    const defaultSelections = [0, 1, 2, 3];
 
     res.json({
       recipes: selectedRecipes,

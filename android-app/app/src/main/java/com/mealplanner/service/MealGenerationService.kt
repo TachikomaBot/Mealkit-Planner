@@ -17,7 +17,6 @@ import com.mealplanner.domain.model.GenerationPhase
 import com.mealplanner.domain.model.GenerationProgress
 import com.mealplanner.domain.repository.GenerationResult
 import com.mealplanner.domain.repository.MealPlanRepository
-import com.mealplanner.domain.repository.PantryRepository
 import com.mealplanner.domain.repository.RecipeRepository
 import com.mealplanner.domain.repository.UserRepository
 import dagger.hilt.android.AndroidEntryPoint
@@ -43,9 +42,6 @@ class MealGenerationService : Service() {
     @Inject
     lateinit var mealPlanRepository: MealPlanRepository
 
-    @Inject
-    lateinit var pantryRepository: PantryRepository
-
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var notificationManager: NotificationManager
 
@@ -58,8 +54,9 @@ class MealGenerationService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START_GENERATION -> {
+                val leftoversInput = intent.getStringExtra(EXTRA_LEFTOVERS_INPUT) ?: ""
                 startForeground(NOTIFICATION_ID, createInitialNotification())
-                startGeneration()
+                startGeneration(leftoversInput)
             }
             ACTION_CANCEL_GENERATION -> {
                 cancelGeneration()
@@ -178,21 +175,18 @@ class MealGenerationService : Service() {
             .build()
     }
 
-    private fun startGeneration() {
+    private fun startGeneration(leftoversInput: String = "") {
         serviceScope.launch {
             _generationState.value = GenerationState.Generating(null)
 
             // Get user preferences (API key is on backend, not needed here)
             val preferences = userRepository.getPreferences()
 
-            // Get pantry items to consider for meal planning
-            val pantryItems = pantryRepository.getAllItems()
-
             // Get recent recipe hashes to avoid repetition
             val recentHashes = mealPlanRepository.getRecentRecipeHashes(weeksBack = 3)
 
             // Start generation with SSE streaming
-            recipeRepository.generateMealPlan(preferences, pantryItems, recentHashes)
+            recipeRepository.generateMealPlan(preferences, recentHashes, leftoversInput)
                 .collect { result ->
                     when (result) {
                         is GenerationResult.Progress -> {
@@ -242,14 +236,16 @@ class MealGenerationService : Service() {
 
         const val ACTION_START_GENERATION = "com.mealplanner.action.START_GENERATION"
         const val ACTION_CANCEL_GENERATION = "com.mealplanner.action.CANCEL_GENERATION"
+        const val EXTRA_LEFTOVERS_INPUT = "com.mealplanner.extra.LEFTOVERS_INPUT"
 
         // Shared state for UI to observe
         private val _generationState = MutableStateFlow<GenerationState>(GenerationState.Idle)
         val generationState: StateFlow<GenerationState> = _generationState.asStateFlow()
 
-        fun startGeneration(context: Context) {
+        fun startGeneration(context: Context, leftoversInput: String = "") {
             val intent = Intent(context, MealGenerationService::class.java).apply {
                 action = ACTION_START_GENERATION
+                putExtra(EXTRA_LEFTOVERS_INPUT, leftoversInput)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)

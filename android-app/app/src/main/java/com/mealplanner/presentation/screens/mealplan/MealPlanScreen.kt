@@ -59,19 +59,23 @@ import com.mealplanner.domain.model.RecipeSearchResult
 import com.mealplanner.domain.model.ShoppingCategories
 import com.mealplanner.domain.model.ShoppingItem
 import com.mealplanner.domain.model.ShoppingList
-import com.mealplanner.domain.model.PendingPantryItem
 import com.mealplanner.presentation.components.GenerationLoadingScreen
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MealPlanScreen(
     onNavigateToShopping: () -> Unit = {},
-    onNavigateToSettings: () -> Unit,
+    onNavigateToSettings: () -> Unit = {},
     onRecipeClick: (Recipe, Int?) -> Unit = { _, _ -> },  // (recipe, selectionIndex)
+    onActivePlanStateChanged: (Boolean) -> Unit = {},
     viewModel: MealPlanViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -79,8 +83,6 @@ fun MealPlanScreen(
     val browseState by viewModel.browseState.collectAsState()
     val categories by viewModel.categories.collectAsState()
     val shoppingList by viewModel.shoppingList.collectAsState()
-    val shoppingCompletionState by viewModel.shoppingCompletionState.collectAsState()
-
     // Check for pending async jobs when app returns from background
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
@@ -90,35 +92,14 @@ fun MealPlanScreen(
         }
     }
 
-    // Shopping completion dialog
-    shoppingCompletionState?.let { completion ->
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissShoppingCompletion() },
-            icon = {
-                Icon(
-                    Icons.Default.CheckCircle,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(48.dp)
-                )
-            },
-            title = { Text("Shopping Complete!") },
-            text = {
-                Text(
-                    "${completion.itemsAddedToPantry} items have been added to your pantry.",
-                    textAlign = TextAlign.Center
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { viewModel.dismissShoppingCompletion() }) {
-                    Text("Done")
-                }
-            }
-        )
+    // Report ActivePlan state to parent so shared TopAppBar/TabRow can hide
+    val isActivePlan = uiState is MealPlanUiState.ActivePlan
+    LaunchedEffect(isActivePlan) {
+        onActivePlanStateChanged(isActivePlan)
     }
 
     // ActivePlan state has its own Scaffold with dynamic TopAppBar
-    if (uiState is MealPlanUiState.ActivePlan) {
+    if (isActivePlan) {
         val state = uiState as MealPlanUiState.ActivePlan
         ActivePlanContent(
             mealPlan = state.mealPlan,
@@ -134,165 +115,365 @@ fun MealPlanScreen(
         return
     }
 
-    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+    // Non-ActivePlan states render directly (no Scaffold — shared TopAppBar is above)
+    Box(modifier = Modifier.fillMaxSize()) {
+        when (val state = uiState) {
+            is MealPlanUiState.Loading -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                title = { Text("Meals") },
-                scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Pacific600,
-                    scrolledContainerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = androidx.compose.ui.graphics.Color.White
+            is MealPlanUiState.Empty -> {
+                val ingredients by viewModel.ingredients.collectAsState()
+                val instructions by viewModel.instructions.collectAsState()
+                EmptyMealPlanContent(
+                    ingredients = ingredients,
+                    instructions = instructions,
+                    onAddIngredient = { viewModel.addIngredient(it) },
+                    onRemoveIngredient = { viewModel.removeIngredient(it) },
+                    onAddInstruction = { viewModel.addInstruction(it) },
+                    onRemoveInstruction = { viewModel.removeInstruction(it) },
+                    onGenerateAI = { leftovers -> viewModel.generateMealPlan(leftovers) }
                 )
-            )
-        }
-    ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            when (val state = uiState) {
-                is MealPlanUiState.Loading -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
+            }
+
+            is MealPlanUiState.Generating -> {
+                GenerationLoadingScreen(
+                    progress = generationProgress,
+                    onCancel = { viewModel.cancelGeneration() }
+                )
+            }
+
+            is MealPlanUiState.Browsing -> {
+                BrowsingContent(
+                    browseState = browseState,
+                    categories = categories,
+                    onCategorySelected = { viewModel.setCategory(it) },
+                    onRecipeToggle = { viewModel.toggleRecipeInBrowse(it) },
+                    onConfirm = { viewModel.confirmBrowseSelection() },
+                    onCancel = { viewModel.cancelBrowsing() }
+                )
+            }
+
+            is MealPlanUiState.SelectingRecipes -> {
+                RecipeSelectionContent(
+                    recipes = state.generatedPlan.recipes,
+                    selectedIndices = state.selectedIndices,
+                    onToggleSelection = { viewModel.toggleRecipeSelection(it) },
+                    onSave = { viewModel.saveMealPlan() },
+                    onRegenerate = { viewModel.reset() },
+                    onRecipeClick = { recipe, index -> onRecipeClick(recipe, index) }
+                )
+            }
+
+            is MealPlanUiState.Saving -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         CircularProgressIndicator()
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Saving meal plan...")
                     }
                 }
+            }
 
-                is MealPlanUiState.Empty -> {
-                    EmptyMealPlanContent(
-                        onGenerateAI = { viewModel.generateMealPlan() }
-                    )
-                }
+            is MealPlanUiState.PolishingGroceryList -> {
+                GroceryListLoadingScreen()
+            }
 
-                is MealPlanUiState.Generating -> {
-                    GenerationLoadingScreen(
-                        progress = generationProgress,
-                        onCancel = { viewModel.cancelGeneration() }
-                    )
-                }
+            is MealPlanUiState.ActivePlan -> {
+                // Handled above
+            }
 
-                is MealPlanUiState.Browsing -> {
-                    BrowsingContent(
-                        browseState = browseState,
-                        categories = categories,
-                        onCategorySelected = { viewModel.setCategory(it) },
-                        onRecipeToggle = { viewModel.toggleRecipeInBrowse(it) },
-                        onConfirm = { viewModel.confirmBrowseSelection() },
-                        onCancel = { viewModel.cancelBrowsing() }
-                    )
-                }
-
-                is MealPlanUiState.SelectingRecipes -> {
-                    RecipeSelectionContent(
-                        recipes = state.generatedPlan.recipes,
-                        selectedIndices = state.selectedIndices,
-                        onToggleSelection = { viewModel.toggleRecipeSelection(it) },
-                        onSave = { viewModel.saveMealPlan() },
-                        onRegenerate = { viewModel.reset() },
-                        onRecipeClick = { recipe, index -> onRecipeClick(recipe, index) }
-                    )
-                }
-
-                is MealPlanUiState.Saving -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            CircularProgressIndicator()
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text("Saving meal plan...")
-                        }
-                    }
-                }
-
-                is MealPlanUiState.PolishingGroceryList -> {
-                    GroceryListLoadingScreen()
-                }
-
-                is MealPlanUiState.ConfirmingPantryItems -> {
-                    ConfirmPantryItemsContent(
-                        items = state.items,
-                        editingItemId = state.editingItemId,
-                        onEditItem = { viewModel.setEditingItem(it) },
-                        onUpdateItem = { id, name, qty -> viewModel.updatePendingItem(id, name, qty) },
-                        onRemoveItem = { viewModel.removeItemFromConfirmation(it) },
-                        onConfirm = { viewModel.confirmPantryItems() },
-                        onCancel = { viewModel.cancelConfirmation() }
-                    )
-                }
-
-                is MealPlanUiState.StockingPantry -> {
-                    StockingPantryLoadingScreen()
-                }
-
-                is MealPlanUiState.ActivePlan -> {
-                    // Handled above
-                }
-
-                is MealPlanUiState.Error -> {
-                    ErrorContent(
-                        message = state.message,
-                        onRetry = { viewModel.dismissError() }
-                    )
-                }
+            is MealPlanUiState.Error -> {
+                ErrorContent(
+                    message = state.message,
+                    onRetry = { viewModel.dismissError() }
+                )
             }
         }
     }
 }
 
+private enum class InputMode { INGREDIENT, INSTRUCTION }
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun EmptyMealPlanContent(
-    onGenerateAI: () -> Unit
+    ingredients: List<String>,
+    instructions: List<String>,
+    onAddIngredient: (String) -> Unit,
+    onRemoveIngredient: (Int) -> Unit,
+    onAddInstruction: (String) -> Unit,
+    onRemoveInstruction: (Int) -> Unit,
+    onGenerateAI: (String) -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = "\uD83C\uDF7D\uFE0F",
-            style = MaterialTheme.typography.displayLarge
-        )
+    var inputText by remember { mutableStateOf("") }
+    var inputMode by remember { mutableStateOf(InputMode.INGREDIENT) }
 
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            text = "Ready to plan your week?",
-            style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "Generate personalized meal-kit style recipes tailored to your preferences",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        Button(
-            onClick = onGenerateAI,
-            modifier = Modifier.fillMaxWidth(0.8f)
-        ) {
-            Icon(Icons.Default.AutoAwesome, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Generate Meal Plan")
+    fun addCurrentItem() {
+        val text = inputText.trim()
+        if (text.isBlank()) return
+        when (inputMode) {
+            InputMode.INGREDIENT -> onAddIngredient(text)
+            InputMode.INSTRUCTION -> onAddInstruction(text)
         }
+        inputText = ""
+    }
+
+    fun buildFormattedInput(): String {
+        val parts = mutableListOf<String>()
+        if (ingredients.isNotEmpty()) {
+            parts.add("INGREDIENTS: ${ingredients.joinToString(", ")}")
+        }
+        if (instructions.isNotEmpty()) {
+            parts.add("INSTRUCTIONS: ${instructions.joinToString("; ")}")
+        }
+        return parts.joinToString("\n")
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Scrollable content area
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = 88.dp) // Reserve space for floating input bar
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "\uD83C\uDF7D\uFE0F",
+                style = MaterialTheme.typography.displayLarge
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "Ready to plan your week?",
+                style = MaterialTheme.typography.headlineMedium,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Generate personalized meal-kit style recipes tailored to your preferences",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+
+            // Instructions section
+            AnimatedVisibility(visible = instructions.isNotEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 24.dp)
+                ) {
+                    Text(
+                        text = "Instructions",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        instructions.forEachIndexed { index, instruction ->
+                            InputChip(
+                                selected = false,
+                                onClick = { onRemoveInstruction(index) },
+                                label = {
+                                    Text(
+                                        instruction,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                },
+                                trailingIcon = {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Remove",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                },
+                                colors = InputChipDefaults.inputChipColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Ingredients section
+            AnimatedVisibility(visible = ingredients.isNotEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 24.dp)
+                ) {
+                    Text(
+                        text = "Ingredients to use up",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        ingredients.forEachIndexed { index, ingredient ->
+                            InputChip(
+                                selected = false,
+                                onClick = { onRemoveIngredient(index) },
+                                label = {
+                                    Text(
+                                        ingredient,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                },
+                                trailingIcon = {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Remove",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                },
+                                colors = InputChipDefaults.inputChipColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            Button(
+                onClick = { onGenerateAI(buildFormattedInput()) },
+                modifier = Modifier.fillMaxWidth(0.8f)
+            ) {
+                Icon(Icons.Default.AutoAwesome, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Generate Meal Plan")
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+
+        // Chat-style input bar at bottom — navigationBarsPadding keeps it above gesture bar,
+        // imePadding pushes it above the keyboard when focused
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .imePadding()
+        ) {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(start = 8.dp, top = 6.dp, end = 8.dp, bottom = 32.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Mode toggle icons (left side)
+                IconButton(
+                    onClick = { inputMode = InputMode.INGREDIENT },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Eco,
+                        contentDescription = "Ingredient mode",
+                        modifier = Modifier.size(22.dp),
+                        tint = if (inputMode == InputMode.INGREDIENT)
+                            Pacific600
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    )
+                }
+                IconButton(
+                    onClick = { inputMode = InputMode.INSTRUCTION },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Default.EditNote,
+                        contentDescription = "Instruction mode",
+                        modifier = Modifier.size(22.dp),
+                        tint = if (inputMode == InputMode.INSTRUCTION)
+                            Pacific600
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    )
+                }
+
+                // Compact rounded text field
+                TextField(
+                    value = inputText,
+                    onValueChange = { inputText = it },
+                    placeholder = {
+                        Text(
+                            if (inputMode == InputMode.INGREDIENT)
+                                "Add an ingredient..."
+                            else
+                                "Add an instruction...",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 40.dp)
+                        .padding(horizontal = 4.dp),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { addCurrentItem() }),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
+                    )
+                )
+
+                Spacer(modifier = Modifier.width(4.dp))
+
+                // Send/Add button
+                IconButton(
+                    onClick = { addCurrentItem() },
+                    enabled = inputText.isNotBlank(),
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(
+                            color = if (inputText.isNotBlank()) Pacific600
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+                            shape = CircleShape
+                        )
+                ) {
+                    Icon(
+                        Icons.Default.ArrowUpward,
+                        contentDescription = "Add",
+                        modifier = Modifier.size(20.dp),
+                        tint = if (inputText.isNotBlank()) Color.White
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                }
+            }
+        } // Column (imePadding wrapper)
     }
 }
 
@@ -344,12 +525,12 @@ private fun BrowsingContent(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Select up to 6 recipes",
+                        text = "Select up to 4 recipes",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                     Text(
-                        text = "${browseState.selectedRecipes.size}/6",
+                        text = "${browseState.selectedRecipes.size}/4",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
@@ -566,7 +747,7 @@ private fun RecipeSelectionContent(
     onRegenerate: () -> Unit,
     onRecipeClick: (Recipe, Int) -> Unit  // (recipe, selectionIndex)
 ) {
-    val maxSelections = 6
+    val maxSelections = 4
     val selectedCount = selectedIndices.size
     var selectedCategory by remember { mutableStateOf(RecipeCategory.ALL) }
 
@@ -765,7 +946,7 @@ private fun SelectableRecipeCard(
 
 /**
  * Circular button with long-press-to-confirm animation.
- * Shows selection count (X/6) or checkmark when all selected.
+ * Shows selection count (X/4) or checkmark when all selected.
  * User must long-press for 1.5s to confirm - inner circle grows to fill the outer ring.
  */
 @Composable
@@ -834,7 +1015,7 @@ private fun LongPressConfirmButton(
             contentAlignment = Alignment.Center
         ) {
             if (allSelected) {
-                // Show checkmark when all 6 selected
+                // Show checkmark when all 4 selected
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = "All selected",
@@ -842,7 +1023,7 @@ private fun LongPressConfirmButton(
                     modifier = Modifier.size(28.dp)
                 )
             } else {
-                // Show count X/6
+                // Show count X/4
                 Text(
                     text = "$selectedCount/$maxCount",
                     style = MaterialTheme.typography.titleMedium,
@@ -1470,449 +1651,6 @@ private fun GroceryListLoadingScreen() {
                 color = PacificBlue,
                 strokeWidth = 3.dp
             )
-        }
-    }
-}
-
-@Composable
-private fun StockingPantryLoadingScreen() {
-    // Pulsing animation for the icon
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val scale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = androidx.compose.animation.core.EaseInOutSine),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "scale"
-    )
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.6f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = androidx.compose.animation.core.EaseInOutSine),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "alpha"
-    )
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            // Pantry icon (using Kitchen/Inventory icon)
-            Box(
-                modifier = Modifier
-                    .size(120.dp)
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Inventory2,
-                    contentDescription = null,
-                    modifier = Modifier.size(80.dp),
-                    tint = PacificBlue.copy(alpha = alpha)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // Loading text
-            Text(
-                text = "Stocking your pantry...",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "Categorizing items with AI",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Progress indicator
-            LinearProgressIndicator(
-                modifier = Modifier
-                    .width(200.dp)
-                    .height(6.dp),
-                color = PacificBlue,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-        }
-    }
-}
-
-/**
- * Confirmation screen shown before adding items to pantry.
- * Matches the design pattern of DeductionConfirmationScreen with clickable cards
- * and inline adjusters.
- */
-@Composable
-private fun ConfirmPantryItemsContent(
-    items: List<PendingPantryItem>,
-    editingItemId: Long?,
-    onEditItem: (Long) -> Unit,
-    onUpdateItem: (Long, String, String) -> Unit,
-    onRemoveItem: (Long) -> Unit,
-    onConfirm: () -> Unit,
-    onCancel: () -> Unit
-) {
-    val activeItems = items.filter { !it.isRemoved }
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Header with instructions
-        Surface(
-            color = MaterialTheme.colorScheme.primaryContainer,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Inventory2,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = "Add to Pantry",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        Text(
-                            text = "Tap items to edit before stocking",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                        )
-                    }
-                }
-            }
-        }
-
-        // Items list with inline adjusters
-        LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(
-                items = items,
-                key = { it.shoppingItemId }
-            ) { item ->
-                val isEditing = editingItemId == item.shoppingItemId
-
-                // Item card - clicking toggles this item's adjuster
-                AdditionItemCard(
-                    item = item,
-                    isActive = isEditing,
-                    onClick = {
-                        // Toggle: if already editing this item, close it; otherwise open it
-                        if (isEditing) {
-                            onEditItem(0L)
-                        } else {
-                            onEditItem(item.shoppingItemId)
-                        }
-                    }
-                )
-
-                // Adjuster row (shown when editing this item)
-                if (isEditing) {
-                    AdditionAdjusterRow(
-                        item = item,
-                        onSave = { name, qty -> onUpdateItem(item.shoppingItemId, name, qty) },
-                        onToggleRemove = { onRemoveItem(item.shoppingItemId) }
-                    )
-                }
-            }
-        }
-
-        // Bottom action buttons
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shadowElevation = 8.dp
-        ) {
-            Row(
-                modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                OutlinedButton(
-                    onClick = onCancel,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Cancel")
-                }
-
-                Button(
-                    onClick = onConfirm,
-                    modifier = Modifier.weight(1f),
-                    enabled = activeItems.isNotEmpty()
-                ) {
-                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Confirm (${activeItems.size})")
-                }
-            }
-        }
-    }
-}
-
-/**
- * Clickable item card for the pantry addition confirmation screen.
- * Shows item name with quantity badge. Matches DeductionItemCard design.
- */
-@Composable
-private fun AdditionItemCard(
-    item: PendingPantryItem,
-    isActive: Boolean,
-    onClick: () -> Unit
-) {
-    val isRemoved = item.isRemoved
-
-    // Light blue highlight for active item (works in both light and dark mode)
-    val activeColor = if (isSystemInDarkTheme()) {
-        Pacific600.copy(alpha = 0.3f)
-    } else {
-        Pacific500.copy(alpha = 0.2f)
-    }
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = when {
-                isActive -> activeColor
-                isRemoved -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                item.isModified -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
-                else -> MaterialTheme.colorScheme.surface
-            }
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .padding(12.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Item info
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = item.name,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (isRemoved) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                               else MaterialTheme.colorScheme.onSurface
-                    )
-                    if (item.hasSubstitution && !isRemoved) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = MaterialTheme.colorScheme.tertiaryContainer
-                        ) {
-                            Text(
-                                text = "Substituted",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-                }
-                // Show source recipes if this is a substitution
-                if (item.hasSubstitution && item.sources.isNotEmpty() && !isRemoved) {
-                    Text(
-                        text = "Updates: ${item.sources.joinToString { it.recipeName }}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.tertiary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            // Quantity badge (matching DeductionQuantityBadge style)
-            AdditionQuantityBadge(
-                quantity = item.displayQuantity,
-                isRemoved = isRemoved,
-                isModified = item.isModified
-            )
-        }
-    }
-}
-
-/**
- * Quantity badge for addition items. Shows quantity in a styled capsule.
- */
-@Composable
-private fun AdditionQuantityBadge(
-    quantity: String,
-    isRemoved: Boolean = false,
-    isModified: Boolean = false
-) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = when {
-            isRemoved -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-            isModified -> MaterialTheme.colorScheme.secondaryContainer
-            else -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.8f)
-        }
-    ) {
-        Text(
-            text = if (isRemoved) "$quantity (Skipped)" else quantity,
-            style = MaterialTheme.typography.labelLarge,
-            color = when {
-                isRemoved -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                isModified -> MaterialTheme.colorScheme.onSecondaryContainer
-                else -> MaterialTheme.colorScheme.onTertiaryContainer
-            },
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-        )
-    }
-}
-
-/**
- * Inline adjuster row for editing item name and quantity.
- * Matches the DeductionAdjusterRow pattern.
- * Close by tapping the active item card again.
- */
-@Composable
-private fun AdditionAdjusterRow(
-    item: PendingPantryItem,
-    onSave: (name: String, quantity: String) -> Unit,
-    onToggleRemove: () -> Unit
-) {
-    var name by remember(item.name) { mutableStateOf(item.name) }
-    var quantity by remember(item.displayQuantity) { mutableStateOf(item.displayQuantity) }
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            // Name field
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("Item name") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Quantity field
-            OutlinedTextField(
-                value = quantity,
-                onValueChange = { quantity = it },
-                label = { Text("Quantity") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            // Show substitution warning if name differs from original
-            if (name != item.originalName && item.sources.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.Info,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                "This will update the ingredient in:",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        item.sources.forEach { source ->
-                            Text(
-                                text = "• ${source.recipeName}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Action buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Skip/Re-Add toggle button
-                OutlinedButton(
-                    onClick = onToggleRemove,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = if (item.isRemoved) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.error
-                        }
-                    )
-                ) {
-                    Icon(
-                        if (item.isRemoved) Icons.Default.AddCircleOutline else Icons.Default.RemoveCircleOutline,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(if (item.isRemoved) "Re-Add" else "Skip")
-                }
-
-                // Save button
-                Button(
-                    onClick = { onSave(name.trim(), quantity.trim()) },
-                    modifier = Modifier.weight(1f),
-                    enabled = name.isNotBlank() && quantity.isNotBlank() && !item.isRemoved
-                ) {
-                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Save")
-                }
-            }
         }
     }
 }

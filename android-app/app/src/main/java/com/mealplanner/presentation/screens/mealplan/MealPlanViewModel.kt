@@ -3,15 +3,9 @@ package com.mealplanner.presentation.screens.mealplan
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.mealplanner.data.remote.api.MealPlanApi
-import com.mealplanner.data.remote.dto.OriginalIngredientDto
-import com.mealplanner.data.remote.dto.RecipeStepDto
-import com.mealplanner.data.remote.dto.SubstitutionRequest
 import com.mealplanner.domain.model.GeneratedMealPlan
 import com.mealplanner.domain.model.GenerationProgress
-import com.mealplanner.domain.model.IngredientSource
 import com.mealplanner.domain.model.MealPlan
-import com.mealplanner.domain.model.PendingPantryItem
 import com.mealplanner.domain.model.Recipe
 import com.mealplanner.domain.model.RecipeSearchResult
 import com.mealplanner.domain.model.ShoppingList
@@ -21,7 +15,6 @@ import com.mealplanner.domain.repository.RecipeRepository
 import com.mealplanner.domain.repository.ShoppingRepository
 import com.mealplanner.domain.usecase.GenerateMealPlanUseCase
 import com.mealplanner.domain.usecase.ManagePreferencesUseCase
-import com.mealplanner.domain.usecase.ManageShoppingListUseCase
 import com.mealplanner.service.GenerationState
 import com.mealplanner.service.GroceryPolishService
 import com.mealplanner.service.MealGenerationService
@@ -39,8 +32,6 @@ class MealPlanViewModel @Inject constructor(
     private val mealPlanRepository: MealPlanRepository,
     private val recipeRepository: RecipeRepository,
     private val shoppingRepository: ShoppingRepository,
-    private val manageShoppingListUseCase: ManageShoppingListUseCase,
-    private val mealPlanApi: MealPlanApi,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -60,8 +51,12 @@ class MealPlanViewModel @Inject constructor(
     private val _shoppingList = MutableStateFlow<ShoppingList?>(null)
     val shoppingList: StateFlow<ShoppingList?> = _shoppingList.asStateFlow()
 
-    private val _shoppingCompletionState = MutableStateFlow<ShoppingCompletionState?>(null)
-    val shoppingCompletionState: StateFlow<ShoppingCompletionState?> = _shoppingCompletionState.asStateFlow()
+    // Meal plan input — persists across tab navigation
+    private val _ingredients = MutableStateFlow<List<String>>(emptyList())
+    val ingredients: StateFlow<List<String>> = _ingredients.asStateFlow()
+
+    private val _instructions = MutableStateFlow<List<String>>(emptyList())
+    val instructions: StateFlow<List<String>> = _instructions.asStateFlow()
 
     init {
         observeCurrentPlan()
@@ -82,7 +77,6 @@ class MealPlanViewModel @Inject constructor(
         val currentState = _uiState.value
         if (currentState is MealPlanUiState.Generating ||
             currentState is MealPlanUiState.PolishingGroceryList ||
-            currentState is MealPlanUiState.StockingPantry ||
             currentState is MealPlanUiState.Saving) {
             android.util.Log.d("MealPlanVM", "Skipping pending job check - already in active state: $currentState")
             return
@@ -136,8 +130,6 @@ class MealPlanViewModel @Inject constructor(
             } else {
                 android.util.Log.d("MealPlanVM", "No pending polish job found")
             }
-
-            // Note: categorize jobs are handled in ManageShoppingListUseCase during completeShoppingTrip
         }
     }
 
@@ -253,9 +245,7 @@ class MealPlanViewModel @Inject constructor(
                         currentState !is MealPlanUiState.SelectingRecipes &&
                         currentState !is MealPlanUiState.Browsing &&
                         currentState !is MealPlanUiState.Saving &&
-                        currentState !is MealPlanUiState.PolishingGroceryList &&
-                        currentState !is MealPlanUiState.ConfirmingPantryItems &&
-                        currentState !is MealPlanUiState.StockingPantry) {
+                        currentState !is MealPlanUiState.PolishingGroceryList) {
 
                         if (plan != null) {
                             // Preserve view mode if already in ActivePlan
@@ -315,7 +305,7 @@ class MealPlanViewModel @Inject constructor(
             val existing = newSelection.find { it.sourceId == recipe.sourceId }
             if (existing != null) {
                 newSelection.remove(existing)
-            } else if (newSelection.size < 6) {
+            } else if (newSelection.size < 4) {
                 newSelection.add(recipe)
             }
             state.copy(selectedRecipes = newSelection)
@@ -365,11 +355,31 @@ class MealPlanViewModel @Inject constructor(
         }
     }
 
-    fun generateMealPlan() {
+    // Meal plan input management
+    fun addIngredient(ingredient: String) {
+        _ingredients.value = _ingredients.value + ingredient
+    }
+
+    fun removeIngredient(index: Int) {
+        _ingredients.value = _ingredients.value.toMutableList().apply { removeAt(index) }
+    }
+
+    fun addInstruction(instruction: String) {
+        _instructions.value = _instructions.value + instruction
+    }
+
+    fun removeInstruction(index: Int) {
+        _instructions.value = _instructions.value.toMutableList().apply { removeAt(index) }
+    }
+
+    fun generateMealPlan(leftoversInput: String = "") {
         // Start the foreground service for generation (API key is on backend)
         _uiState.value = MealPlanUiState.Generating
         _generationProgress.value = null
-        MealGenerationService.startGeneration(context)
+        MealGenerationService.startGeneration(context, leftoversInput)
+        // Clear inputs after generation starts
+        _ingredients.value = emptyList()
+        _instructions.value = emptyList()
     }
 
     fun cancelGeneration() {
@@ -403,7 +413,7 @@ class MealPlanViewModel @Inject constructor(
             val newSelection = currentState.selectedIndices.toMutableSet()
             if (newSelection.contains(index)) {
                 newSelection.remove(index)
-            } else if (newSelection.size < 6) {
+            } else if (newSelection.size < 4) {
                 newSelection.add(index)
             }
             _uiState.value = currentState.copy(selectedIndices = newSelection)
@@ -442,6 +452,13 @@ class MealPlanViewModel @Inject constructor(
             _uiState.value = MealPlanUiState.ActivePlan(plan, ViewMode.PRIMARY)
         } else {
             setEmpty()
+        }
+    }
+
+    fun markShoppingComplete() {
+        viewModelScope.launch {
+            val plan = mealPlanRepository.getCurrentMealPlan() ?: return@launch
+            mealPlanRepository.markShoppingComplete(plan.id)
         }
     }
 
@@ -495,215 +512,6 @@ class MealPlanViewModel @Inject constructor(
         }
     }
 
-    fun markShoppingComplete() {
-        viewModelScope.launch {
-            val current = _uiState.value
-            if (current is MealPlanUiState.ActivePlan) {
-                val mealPlanId = current.mealPlan.id
-
-                try {
-                    // Get checked items and their sources for the confirmation screen
-                    val checkedItems = shoppingRepository.getCheckedItems(mealPlanId)
-                    if (checkedItems.isEmpty()) {
-                        android.util.Log.w("MealPlanVM", "No checked items to add to pantry")
-                        return@launch
-                    }
-
-                    val itemsWithSources = shoppingRepository.getItemsWithSources(mealPlanId)
-                    android.util.Log.d("MealPlanVM", "Building confirmation screen with ${checkedItems.size} items")
-
-                    // Build pending pantry items for confirmation
-                    val pendingItems = checkedItems.map { item ->
-                        val sources = itemsWithSources[item.id] ?: emptyList()
-                        PendingPantryItem(
-                            shoppingItemId = item.id,
-                            name = item.name,
-                            displayQuantity = item.displayQuantity,
-                            isModified = false,
-                            originalName = item.name,
-                            sources = sources
-                        )
-                    }
-
-                    // Show confirmation screen
-                    _uiState.value = MealPlanUiState.ConfirmingPantryItems(
-                        mealPlanId = mealPlanId,
-                        items = pendingItems
-                    )
-                } catch (e: Exception) {
-                    android.util.Log.e("MealPlanVM", "Failed to prepare confirmation: ${e.message}", e)
-                    // Stay on active plan
-                }
-            }
-        }
-    }
-
-    fun updatePendingItem(itemId: Long, newName: String, newQuantity: String) {
-        val current = _uiState.value
-        if (current is MealPlanUiState.ConfirmingPantryItems) {
-            val updatedItems = current.items.map { item ->
-                if (item.shoppingItemId == itemId) {
-                    item.copy(
-                        name = newName,
-                        displayQuantity = newQuantity,
-                        isModified = newName != item.originalName || newQuantity != item.displayQuantity
-                    )
-                } else item
-            }
-            _uiState.value = current.copy(items = updatedItems, editingItemId = null)
-        }
-    }
-
-    fun setEditingItem(itemId: Long?) {
-        val current = _uiState.value
-        if (current is MealPlanUiState.ConfirmingPantryItems) {
-            _uiState.value = current.copy(editingItemId = itemId)
-        }
-    }
-
-    fun removeItemFromConfirmation(itemId: Long) {
-        val current = _uiState.value
-        if (current is MealPlanUiState.ConfirmingPantryItems) {
-            // Toggle isRemoved flag instead of removing from list (allows "skipped" display)
-            val updatedItems = current.items.map { item ->
-                if (item.shoppingItemId == itemId) {
-                    item.copy(isRemoved = !item.isRemoved)
-                } else item
-            }
-            _uiState.value = current.copy(items = updatedItems)
-        }
-    }
-
-    fun confirmPantryItems() {
-        viewModelScope.launch {
-            val current = _uiState.value
-            if (current is MealPlanUiState.ConfirmingPantryItems) {
-                val mealPlanId = current.mealPlanId
-
-                // Show stocking progress UI
-                _uiState.value = MealPlanUiState.StockingPantry
-
-                try {
-                    // First, uncheck any items that were skipped so they won't be added to pantry
-                    val removedItems = current.items.filter { it.isRemoved }
-                    for (item in removedItems) {
-                        shoppingRepository.toggleItemChecked(item.shoppingItemId)
-                    }
-
-                    // 1. Propagate name substitutions to recipes using AI (only for active items)
-                    for (item in current.items.filter { it.hasSubstitution && !it.isRemoved }) {
-                        android.util.Log.d("MealPlanVM", "Processing substitution: '${item.originalName}' -> '${item.name}'")
-
-                        for (source in item.sources) {
-                            try {
-                                // Convert recipe steps to DTO format
-                                val stepsDto = source.recipeSteps.map { step ->
-                                    RecipeStepDto(title = step.title, substeps = step.substeps)
-                                }
-
-                                // Call AI to intelligently process the substitution
-                                val substitutionRequest = SubstitutionRequest(
-                                    recipeName = source.recipeName,
-                                    originalIngredient = OriginalIngredientDto(
-                                        name = item.originalName,
-                                        quantity = source.originalQuantity,
-                                        unit = source.originalUnit,
-                                        preparation = source.originalPreparation
-                                    ),
-                                    newIngredientName = item.name,
-                                    steps = stepsDto
-                                )
-
-                                val aiResponse = mealPlanApi.processSubstitution(substitutionRequest)
-                                android.util.Log.d("MealPlanVM",
-                                    "AI substitution result: recipe='${aiResponse.updatedRecipeName}', " +
-                                    "ingredient=${aiResponse.updatedIngredient.quantity} ${aiResponse.updatedIngredient.unit} ${aiResponse.updatedIngredient.name}, " +
-                                    "${aiResponse.updatedSteps.size} steps" +
-                                    (aiResponse.notes?.let { ", notes=$it" } ?: "")
-                                )
-
-                                // Convert updated steps back to domain format
-                                val updatedSteps = aiResponse.updatedSteps.map { step ->
-                                    com.mealplanner.domain.model.CookingStep(title = step.title, substeps = step.substeps)
-                                }
-
-                                // Apply the AI-determined updates including steps
-                                mealPlanRepository.updateRecipeWithSubstitution(
-                                    plannedRecipeId = source.plannedRecipeId,
-                                    ingredientIndex = source.ingredientIndex,
-                                    newRecipeName = aiResponse.updatedRecipeName,
-                                    newIngredientName = aiResponse.updatedIngredient.name,
-                                    newQuantity = aiResponse.updatedIngredient.quantity,
-                                    newUnit = aiResponse.updatedIngredient.unit,
-                                    newPreparation = aiResponse.updatedIngredient.preparation,
-                                    newSteps = updatedSteps
-                                )
-                            } catch (e: Exception) {
-                                // If AI call fails, fall back to simple name update
-                                android.util.Log.w("MealPlanVM", "AI substitution failed, using fallback: ${e.message}")
-                                mealPlanRepository.updateRecipeIngredient(
-                                    plannedRecipeId = source.plannedRecipeId,
-                                    ingredientIndex = source.ingredientIndex,
-                                    newName = item.name
-                                )
-                            }
-                        }
-                    }
-
-                    // 2. Update shopping items with edits (only for active items)
-                    for (item in current.items.filter { it.isModified && !it.isRemoved }) {
-                        shoppingRepository.updateItem(
-                            itemId = item.shoppingItemId,
-                            name = item.name,
-                            displayQuantity = item.displayQuantity
-                        )
-                    }
-
-                    // 3. Proceed with AI categorization and pantry stocking
-                    val itemsAdded = manageShoppingListUseCase.completeShoppingTrip(mealPlanId)
-
-                    // Mark shopping as complete in the meal plan
-                    mealPlanRepository.markShoppingComplete(mealPlanId)
-
-                    // Transition back to active plan
-                    val updatedPlan = mealPlanRepository.getCurrentMealPlan()
-                    if (updatedPlan != null) {
-                        _uiState.value = MealPlanUiState.ActivePlan(updatedPlan, ViewMode.PRIMARY)
-                    } else {
-                        setEmpty()
-                    }
-
-                    // Show completion dialog
-                    _shoppingCompletionState.value = ShoppingCompletionState(itemsAddedToPantry = itemsAdded)
-                } catch (e: Exception) {
-                    android.util.Log.e("MealPlanVM", "Failed to stock pantry: ${e.message}", e)
-                    // Return to active plan on error
-                    val plan = mealPlanRepository.getCurrentMealPlan()
-                    if (plan != null) {
-                        _uiState.value = MealPlanUiState.ActivePlan(plan, ViewMode.SECONDARY)
-                    } else {
-                        setEmpty()
-                    }
-                }
-            }
-        }
-    }
-
-    fun cancelConfirmation() {
-        viewModelScope.launch {
-            val plan = mealPlanRepository.getCurrentMealPlan()
-            if (plan != null) {
-                _uiState.value = MealPlanUiState.ActivePlan(plan, ViewMode.SECONDARY)
-            } else {
-                setEmpty()
-            }
-        }
-    }
-
-    fun dismissShoppingCompletion() {
-        _shoppingCompletionState.value = null
-    }
-
     fun toggleItemChecked(itemId: Long) {
         viewModelScope.launch {
             shoppingRepository.toggleItemChecked(itemId)
@@ -722,12 +530,6 @@ sealed class MealPlanUiState {
     ) : MealPlanUiState()
     data object Saving : MealPlanUiState()
     data object PolishingGroceryList : MealPlanUiState()
-    data class ConfirmingPantryItems(
-        val mealPlanId: Long,
-        val items: List<PendingPantryItem>,
-        val editingItemId: Long? = null
-    ) : MealPlanUiState()
-    data object StockingPantry : MealPlanUiState()
     data class ActivePlan(
         val mealPlan: MealPlan,
         val viewMode: ViewMode = ViewMode.PRIMARY
@@ -744,6 +546,3 @@ data class BrowseState(
     val isLoading: Boolean = false
 )
 
-data class ShoppingCompletionState(
-    val itemsAddedToPantry: Int
-)

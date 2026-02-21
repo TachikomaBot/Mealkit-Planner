@@ -25,9 +25,6 @@ class ShoppingViewModel @Inject constructor(
     private val _showAddDialog = MutableStateFlow(false)
     val showAddDialog: StateFlow<Boolean> = _showAddDialog.asStateFlow()
 
-    private val _completionState = MutableStateFlow<CompletionState?>(null)
-    val completionState: StateFlow<CompletionState?> = _completionState.asStateFlow()
-
     init {
         observeShoppingList()
     }
@@ -103,25 +100,7 @@ class ShoppingViewModel @Inject constructor(
         }
     }
 
-    fun completeShoppingTrip() {
-        val currentState = _uiState.value
-        if (currentState is ShoppingUiState.Loaded) {
-            viewModelScope.launch {
-                val itemsAdded = shoppingListUseCase.completeShoppingTrip(
-                    currentState.shoppingList.mealPlanId
-                )
-                _completionState.value = CompletionState(itemsAddedToPantry = itemsAdded)
-                _isShoppingMode.value = false
-            }
-        }
-    }
-
-    fun dismissCompletion() {
-        _completionState.value = null
-    }
-
     private fun groupItemsByCategory(items: List<ShoppingItem>): Map<String, List<ShoppingItem>> {
-        // Group by category and sort by the predefined order
         return items
             .groupBy { it.category }
             .toSortedMap(compareBy { category ->
@@ -139,7 +118,3 @@ sealed class ShoppingUiState {
         val groupedItems: Map<String, List<ShoppingItem>>
     ) : ShoppingUiState()
 }
-
-data class CompletionState(
-    val itemsAddedToPantry: Int
-)

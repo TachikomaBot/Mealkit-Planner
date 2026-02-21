@@ -53,6 +53,10 @@ android {
     }
 }
 
+ksp {
+    arg("room.generateKotlin", "true")
+}
+
 dependencies {
     // Core Android
     implementation(libs.androidx.core.ktx)

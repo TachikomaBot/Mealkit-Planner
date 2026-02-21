@@ -601,7 +601,7 @@ function findBalancedJSON(text: string): string | null {
 
 async function planMeals(
   apiKey: string,
-  pantryItems: PantryItem[],
+  leftoversInput: string,
   preferences: UserPreferences | null,
   recentRecipes: string[],
   targetServings: number,
@@ -679,14 +679,15 @@ Respond with JSON at the end:
   ]
 }`;
 
-  const pantrySection = pantryItems.length > 0
-    ? `Current pantry staples:\n${pantryItems.map(i => `${i.name}: ${i.quantity} ${i.unit}`).join('\n')}`
-    : '(No pantry items specified - assume standard pantry staples like salt, pepper, oil, etc.)';
+  const leftoversSection = leftoversInput.trim()
+    ? `PRIORITY INGREDIENTS TO USE:
+${leftoversInput.trim()}
+You MUST incorporate these ingredients into at least 2-3 of the meals. Design recipes around using them up.
+`
+    : '';
 
   const userPrompt = `Plan ${numMeals} complete dinner meals for this week.
-
-${pantrySection}
-
+${leftoversSection}
 CRITICAL INSTRUCTIONS:
 1. You have a STRICT LIMIT of 10-15 tool calls total - search efficiently!
 2. Do 4-6 broad searches to find diverse recipes (chicken, beef, pork, fish, vegetarian, etc.)
@@ -949,7 +950,7 @@ export async function generateMealPlan(
   console.log('[MealGen] Stage 1: Planning meals...');
   const mealOutlines = await planMeals(
     apiKey,
-    request.pantryItems,
+    request.leftoversInput || '',
     request.preferences,
     request.recentRecipeHashes,
     targetServings,
@@ -997,8 +998,8 @@ export async function generateMealPlan(
 
   console.log(`[MealGen] Stage 2 complete: ${allMeals.length} total meals`);
 
-  // Select default 6 with variety
-  const defaultSelections = selectDefaultSix(allMeals);
+  // Select default 4 with variety
+  const defaultSelections = selectDefaultFour(allMeals);
 
   onProgress?.({
     phase: 'complete',
@@ -1015,8 +1016,8 @@ export async function generateMealPlan(
   };
 }
 
-// Select 6 defaults with variety
-function selectDefaultSix(meals: ComposedMeal[]): number[] {
+// Select 4 defaults with variety
+function selectDefaultFour(meals: ComposedMeal[]): number[] {
   const selected: number[] = [];
   const usedProteins = new Set<string>();
   const usedFormats = new Set<string>();
@@ -1030,7 +1031,7 @@ function selectDefaultSix(meals: ComposedMeal[]): number[] {
     });
 
   for (const [index, meal] of expiringFirst) {
-    if (selected.length >= 6) break;
+    if (selected.length >= 4) break;
 
     const tags = meal.tags.map(t => t.toLowerCase());
     const protein = tags.find(t =>
@@ -1040,7 +1041,7 @@ function selectDefaultSix(meals: ComposedMeal[]): number[] {
       ['bowl', 'sandwich', 'burger', 'taco', 'wrap', 'pasta', 'soup', 'stew', 'salad'].includes(t)
     ) || 'other';
 
-    if (selected.length < 4) {
+    if (selected.length < 3) {
       if (usedProteins.has(protein) || usedFormats.has(format)) {
         continue;
       }
@@ -1052,13 +1053,13 @@ function selectDefaultSix(meals: ComposedMeal[]): number[] {
   }
 
   // Fill remaining slots
-  for (let i = 0; i < meals.length && selected.length < 6; i++) {
+  for (let i = 0; i < meals.length && selected.length < 4; i++) {
     if (!selected.includes(i)) {
       selected.push(i);
     }
   }
 
-  return selected.slice(0, 6);
+  return selected.slice(0, 4);
 }
 
 // ============================================================================

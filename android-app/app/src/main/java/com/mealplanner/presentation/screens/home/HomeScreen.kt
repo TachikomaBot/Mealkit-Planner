@@ -30,61 +30,20 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.mealplanner.domain.model.PlannedRecipe
 import com.mealplanner.domain.model.Recipe
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onNavigateToMeals: () -> Unit,
     onNavigateToShopping: () -> Unit,
-    onNavigateToSettings: () -> Unit,
     onRecipeClick: (Recipe) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = "Mise",
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                        Text(
-                            text = uiState.weekDisplayText,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Settings"
-                        )
-                    }
-                },
-                scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Tomato600, // Explicitly Tomato
-                    scrolledContainerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = androidx.compose.ui.graphics.Color.White, // Always White on Tomato
-                    actionIconContentColor = androidx.compose.ui.graphics.Color.White
-                )
-            )
-        }
-    ) { padding ->
     // Dynamic subheader color: Darker Tomato in light mode, Lighter Tomato in dark mode
     val subheaderColor = if (isSystemInDarkTheme()) Tomato500 else Tomato700
     val onSubheaderColor = Color.White
 
-    Column(modifier = Modifier
-        .fillMaxSize()
-        .padding(padding)
-    ) {
+    Column(modifier = Modifier.fillMaxSize()) {
         // Fixed Subheader
         Surface(
             color = subheaderColor,
@@ -182,7 +141,6 @@ fun HomeScreen(
             }
         }
     }
-}
 }
 
 @Composable

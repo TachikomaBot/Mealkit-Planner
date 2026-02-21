@@ -1,7 +1,10 @@
 package com.mealplanner.presentation.navigation
 
 import android.util.Base64
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -13,13 +16,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Kitchen
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Kitchen
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,7 +49,6 @@ import com.mealplanner.domain.model.Recipe
 import com.mealplanner.domain.model.RecipeIngredient
 import com.mealplanner.presentation.screens.home.HomeScreen
 import com.mealplanner.presentation.screens.mealplan.MealPlanScreen
-import com.mealplanner.presentation.screens.pantry.PantryScreen
 import com.mealplanner.presentation.screens.profile.ProfileScreen
 import com.mealplanner.presentation.screens.recipe.RecipeDetailScreen
 import com.mealplanner.presentation.screens.settings.SettingsScreen
@@ -62,36 +64,29 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
 
-// Bottom navigation tabs
-sealed class BottomNavTab(
+// Navigation tabs
+sealed class NavTab(
     val route: String,
     val title: String,
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector,
     val color: Color
 ) {
-    data object Home : BottomNavTab(
+    data object Home : NavTab(
         route = "tab_home",
         title = "Home",
         selectedIcon = Icons.Filled.Home,
         unselectedIcon = Icons.Outlined.Home,
         color = Tomato600
     )
-    data object Pantry : BottomNavTab(
-        route = "tab_pantry",
-        title = "Pantry",
-        selectedIcon = Icons.Filled.Kitchen,
-        unselectedIcon = Icons.Outlined.Kitchen,
-        color = Mustard600
-    )
-    data object Meals : BottomNavTab(
+    data object Meals : NavTab(
         route = "tab_meals",
         title = "Meals",
         selectedIcon = Icons.Filled.CalendarMonth,
         unselectedIcon = Icons.Outlined.CalendarMonth,
         color = Pacific600
     )
-    data object Profile : BottomNavTab(
+    data object Profile : NavTab(
         route = "tab_profile",
         title = "Profile",
         selectedIcon = Icons.Filled.Person,
@@ -117,11 +112,10 @@ sealed class AppScreen(val route: String) {
     data object Settings : AppScreen("settings")
 }
 
-val bottomNavTabs = listOf(
-    BottomNavTab.Home,
-    BottomNavTab.Pantry,
-    BottomNavTab.Meals,
-    BottomNavTab.Profile
+val navTabs = listOf(
+    NavTab.Home,
+    NavTab.Meals,
+    NavTab.Profile
 )
 
 // ViewModel to observe test mode state
@@ -142,6 +136,7 @@ class MainScreenViewModel @Inject constructor(
         )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     viewModel: MainScreenViewModel = hiltViewModel()
@@ -151,8 +146,55 @@ fun MainScreen(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val isTestModeEnabled by viewModel.isTestModeEnabled.collectAsState()
+    val isDark = isSystemInDarkTheme()
 
-    // Alternative layout: simpler Column instead of Scaffold
+    // Track whether MealPlanScreen is in ActivePlan state (it has its own header)
+    var isMealPlanActive by remember { mutableStateOf(false) }
+
+    // Reset when navigating away from Meals tab
+    LaunchedEffect(currentDestination?.route) {
+        if (currentDestination?.route != NavTab.Meals.route) {
+            isMealPlanActive = false
+        }
+    }
+
+    // Show shared header on tab routes, but not when MealPlan has its own
+    val isOnTabRoute = currentDestination?.route?.let { route ->
+        navTabs.any { it.route == route }
+    } ?: true
+    val isOnMealsTab = currentDestination?.route == NavTab.Meals.route
+    val showSharedTopBar = isOnTabRoute && !(isOnMealsTab && isMealPlanActive)
+
+    // Animated color based on current tab
+    val currentTabColor = navTabs.find { tab ->
+        currentDestination?.hierarchy?.any { it.route == tab.route } == true
+    }?.color ?: Tomato600
+
+    val animatedTopBarColor by animateColorAsState(
+        targetValue = currentTabColor,
+        animationSpec = tween(durationMillis = 300),
+        label = "topBarColor"
+    )
+
+    val tabRowDarkerColor = when (currentTabColor) {
+        Tomato600 -> if (isDark) Tomato500 else Tomato700
+        Pacific600 -> if (isDark) Pacific500 else Pacific700
+        Sage600 -> if (isDark) Sage500 else Sage700
+        else -> currentTabColor
+    }
+    val animatedTabRowColor by animateColorAsState(
+        targetValue = tabRowDarkerColor,
+        animationSpec = tween(durationMillis = 300),
+        label = "tabRowColor"
+    )
+
+    // Week display text
+    val weekDisplayText = remember {
+        val nextMonday = java.time.LocalDate.now()
+            .with(java.time.temporal.TemporalAdjusters.nextOrSame(java.time.DayOfWeek.MONDAY))
+        "Week of ${nextMonday.format(java.time.format.DateTimeFormatter.ofPattern("MMM d"))}"
+    }
+
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -174,6 +216,48 @@ fun MainScreen(
             }
         }
 
+        // Shared Top App Bar
+        if (showSharedTopBar) {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(
+                            text = "Mise",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                        Text(
+                            text = weekDisplayText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.7f)
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = {
+                        navController.navigate(AppScreen.Settings.route)
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Settings"
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = animatedTopBarColor,
+                    titleContentColor = Color.White,
+                    actionIconContentColor = Color.White
+                )
+            )
+        }
+
+        // Top Tab Row
+        if (showSharedTopBar) {
+            TopTabRow(
+                navController = navController,
+                containerColor = animatedTabRowColor
+            )
+        }
+
         // Main content area
         Box(
             modifier = Modifier
@@ -183,14 +267,14 @@ fun MainScreen(
         ) {
             NavHost(
                 navController = navController,
-                startDestination = BottomNavTab.Home.route,
+                startDestination = NavTab.Home.route,
                 modifier = Modifier.fillMaxSize()
             ) {
                 // Tab destinations
-                composable(BottomNavTab.Home.route) {
+                composable(NavTab.Home.route) {
                     HomeScreen(
                         onNavigateToMeals = {
-                            navController.navigate(BottomNavTab.Meals.route) {
+                            navController.navigate(NavTab.Meals.route) {
                                 popUpTo(navController.graph.findStartDestination().id) {
                                     saveState = true
                                 }
@@ -201,20 +285,13 @@ fun MainScreen(
                         onNavigateToShopping = {
                             navController.navigate(AppScreen.Shopping.route)
                         },
-                        onNavigateToSettings = {
-                            navController.navigate(AppScreen.Settings.route)
-                        },
                         onRecipeClick = { recipe ->
                             navController.navigate(AppScreen.RecipeDetail.createRoute(recipe, json))
                         }
                     )
                 }
 
-                composable(BottomNavTab.Pantry.route) {
-                    PantryScreen()
-                }
-
-                composable(BottomNavTab.Meals.route) {
+                composable(NavTab.Meals.route) {
                     MealPlanScreen(
                         onNavigateToShopping = {
                             navController.navigate(AppScreen.Shopping.route)
@@ -224,11 +301,14 @@ fun MainScreen(
                         },
                         onRecipeClick = { recipe, selectionIndex ->
                             navController.navigate(AppScreen.RecipeDetail.createRoute(recipe, json, selectionIndex))
+                        },
+                        onActivePlanStateChanged = { isActive ->
+                            isMealPlanActive = isActive
                         }
                     )
                 }
 
-                composable(BottomNavTab.Profile.route) {
+                composable(NavTab.Profile.route) {
                     ProfileScreen()
                 }
 
@@ -237,7 +317,7 @@ fun MainScreen(
                     ShoppingScreen(
                         onBack = { navController.popBackStack() },
                         onNavigateToMealPlan = {
-                            navController.navigate(BottomNavTab.Meals.route) {
+                            navController.navigate(NavTab.Meals.route) {
                                 popUpTo(navController.graph.findStartDestination().id) {
                                     saveState = true
                                 }
@@ -276,56 +356,58 @@ fun MainScreen(
                 }
             }
         }
-
-        // Bottom Navigation Bar
-        BottomNavigationBar(navController = navController)
     }
 }
 
 @Composable
-private fun BottomNavigationBar(navController: NavHostController) {
+private fun TopTabRow(
+    navController: NavHostController,
+    containerColor: Color
+) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
 
-    // Hide bottom bar on full-screen destinations
-    val showBottomBar = currentDestination?.route?.let { route ->
-        bottomNavTabs.any { it.route == route }
-    } ?: true
+    val selectedIndex = navTabs.indexOfFirst { tab ->
+        currentDestination?.hierarchy?.any { it.route == tab.route } == true
+    }.coerceAtLeast(0)
 
-    if (showBottomBar) {
-        NavigationBar(
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            tonalElevation = 0.dp
-        ) {
-            bottomNavTabs.forEach { tab ->
-                val selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true
-
-                NavigationBarItem(
-                    selected = selected,
-                    onClick = {
-                        navController.navigate(tab.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    icon = {
-                        Icon(
-                            imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
-                            contentDescription = tab.title
-                        )
-                    },
-                    label = { Text(tab.title) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = tab.color,
-                        selectedTextColor = tab.color,
-                        indicatorColor = tab.color.copy(alpha = 0.1f) // Subtle indicator
-                    )
+    TabRow(
+        selectedTabIndex = selectedIndex,
+        containerColor = containerColor,
+        contentColor = Color.White,
+        indicator = { tabPositions ->
+            if (selectedIndex < tabPositions.size) {
+                TabRowDefaults.SecondaryIndicator(
+                    Modifier.tabIndicatorOffset(tabPositions[selectedIndex]),
+                    color = Color.White
                 )
             }
+        }
+    ) {
+        navTabs.forEach { tab ->
+            val selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true
+
+            Tab(
+                selected = selected,
+                onClick = {
+                    navController.navigate(tab.route) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                text = { Text(tab.title) },
+                icon = {
+                    Icon(
+                        imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
+                        contentDescription = tab.title
+                    )
+                },
+                selectedContentColor = Color.White,
+                unselectedContentColor = Color.White.copy(alpha = 0.7f)
+            )
         }
     }
 }

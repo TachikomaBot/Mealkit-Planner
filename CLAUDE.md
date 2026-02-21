@@ -27,3 +27,7 @@ Android meal planning app built with Jetpack Compose. Key features:
 - Pantry tracking with smart stock levels
 - Shopping list management
 - Recipe-to-pantry deduction flow
+
+## Gemini Model
+
+**Always use `gemini-3-flash-preview` when writing new API calls to Gemini.** This is the model used for all AI features including meal plan generation, recipe customization, ingredient substitution, and pantry categorization.

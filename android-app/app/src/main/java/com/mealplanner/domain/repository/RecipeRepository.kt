@@ -2,7 +2,6 @@ package com.mealplanner.domain.repository
 
 import com.mealplanner.domain.model.GeneratedMealPlan
 import com.mealplanner.domain.model.GenerationProgress
-import com.mealplanner.domain.model.PantryItem
 import com.mealplanner.domain.model.Recipe
 import com.mealplanner.domain.model.RecipeSearchResult
 import com.mealplanner.domain.model.UserPreferences
@@ -42,8 +41,8 @@ interface RecipeRepository {
      */
     fun generateMealPlan(
         preferences: UserPreferences,
-        pantryItems: List<PantryItem>,
-        recentRecipeHashes: List<String>
+        recentRecipeHashes: List<String>,
+        leftoversInput: String = ""
     ): Flow<GenerationResult>
 
     /**

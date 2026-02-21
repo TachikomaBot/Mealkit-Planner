@@ -8,16 +8,12 @@ import com.mealplanner.data.local.entity.PendingJobType
 import com.mealplanner.data.local.entity.ShoppingItemEntity
 import com.mealplanner.data.local.entity.ShoppingItemSourceEntity
 import com.mealplanner.data.remote.api.MealPlanApi
-import com.mealplanner.data.remote.dto.CategorizedPantryItemDto
 import com.mealplanner.data.remote.dto.GroceryIngredientDto
 import com.mealplanner.data.remote.dto.GroceryPolishRequest
 import com.mealplanner.data.remote.dto.GroceryPolishResponse
 import com.mealplanner.data.remote.dto.ModifiedIngredientDto
-import com.mealplanner.data.remote.dto.PantryCategorizeRequest
-import com.mealplanner.data.remote.dto.PantryItemDto
 import com.mealplanner.data.remote.dto.PolishedGroceryItemDto
 import com.mealplanner.data.remote.dto.RecipeIngredientDto
-import com.mealplanner.data.remote.dto.ShoppingItemForPantryDto
 import com.mealplanner.data.remote.dto.ShoppingListUpdateRequest
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -25,13 +21,9 @@ import com.mealplanner.domain.model.IngredientSource
 import com.mealplanner.domain.model.ModifiedIngredient
 import com.mealplanner.domain.model.RecipeIngredient
 import com.mealplanner.domain.model.RecipeStepSource
-import com.mealplanner.domain.model.PantryItem
 import com.mealplanner.domain.model.ShoppingCategories
 import com.mealplanner.domain.model.ShoppingItem
 import com.mealplanner.domain.model.ShoppingList
-import com.mealplanner.domain.model.StockLevel
-import com.mealplanner.domain.model.TrackingStyle
-import com.mealplanner.domain.repository.PantryRepository
 import com.mealplanner.domain.repository.ShoppingRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -48,7 +40,6 @@ class ShoppingRepositoryImpl @Inject constructor(
     private val shoppingDao: ShoppingDao,
     private val mealPlanDao: MealPlanDao,
     private val mealPlanApi: MealPlanApi,
-    private val pantryRepository: PantryRepository,
     private val pendingJobDao: PendingJobDao
 ) : ShoppingRepository {
 
@@ -94,11 +85,6 @@ class ShoppingRepositoryImpl @Inject constructor(
             val plannedRecipes = mealPlanDao.getPlannedRecipes(mealPlanId)
             android.util.Log.d("ShoppingRepo", "Found ${plannedRecipes.size} planned recipes")
 
-            // Get pantry items for cross-referencing
-            val pantryItems = pantryRepository.getAllItems()
-            val pantryLookup = buildPantryLookup(pantryItems)
-            android.util.Log.d("ShoppingRepo", "Loaded ${pantryItems.size} pantry items for cross-reference")
-
             // Aggregate ingredients across all recipes with source tracking
             // Only aggregate exact matches - Gemini will handle smart merging during polish
             val aggregatedIngredients = mutableMapOf<String, AggregatedIngredient>()
@@ -109,10 +95,6 @@ class ShoppingRepositoryImpl @Inject constructor(
                 android.util.Log.d("ShoppingRepo", "Recipe '${recipe.recipeName}' has ${ingredients.size} ingredients")
 
                 for ((ingredientIndex, ingredient) in ingredients.withIndex()) {
-                    // Skip items that have sufficient stock in pantry
-                    // (Gemini polish will handle other exclusions like salt, water, oil)
-                    if (hasSufficientPantryStock(ingredient.name, pantryLookup)) continue
-
                     // Create source info for this ingredient
                     val sourceInfo = IngredientSourceInfo(
                         plannedRecipeId = recipe.id,
@@ -264,11 +246,8 @@ class ShoppingRepositoryImpl @Inject constructor(
             android.util.Log.d("ShoppingRepo", "Found ${items.size} items to polish")
 
             // Get pantry items to pass to Gemini for cross-referencing
-            val pantryItems = pantryRepository.getAllItems()
-            android.util.Log.d("ShoppingRepo", "Sending ${pantryItems.size} pantry items for context")
-
             // Convert to API request format
-            // Gemini will handle exclusions (salt, water, oil, etc.) and pantry cross-referencing
+            // Gemini will handle exclusions (salt, water, oil, etc.)
             val request = GroceryPolishRequest(
                 ingredients = items.map { item ->
                     GroceryIngredientDto(
@@ -278,14 +257,7 @@ class ShoppingRepositoryImpl @Inject constructor(
                         unit = item.unit
                     )
                 },
-                pantryItems = pantryItems.map { pantry ->
-                    PantryItemDto(
-                        name = pantry.name,
-                        quantity = pantry.quantityRemaining,
-                        unit = pantry.unit.displayName,
-                        availability = pantry.effectiveStockLevel.name.lowercase()
-                    )
-                }
+                pantryItems = emptyList()
             )
 
             // Start async polish job
@@ -517,24 +489,6 @@ class ShoppingRepositoryImpl @Inject constructor(
             .trim()
     }
 
-    // Build a lookup map from pantry items, keyed by normalized name
-    private fun buildPantryLookup(items: List<PantryItem>): Map<String, PantryItem> {
-        return items.associateBy { normalizeForPantryMatch(it.name) }
-    }
-
-    // Check if an ingredient has sufficient stock in the pantry
-    private fun hasSufficientPantryStock(ingredientName: String, lookup: Map<String, PantryItem>): Boolean {
-        val normalizedName = normalizeForPantryMatch(ingredientName)
-        val pantryItem = lookup[normalizedName] ?: return false
-
-        return when (pantryItem.trackingStyle) {
-            TrackingStyle.STOCK_LEVEL ->
-                pantryItem.effectiveStockLevel in listOf(StockLevel.SOME, StockLevel.PLENTY)
-            TrackingStyle.UNITS ->
-                pantryItem.quantityRemaining > 0 && !pantryItem.isLowStock
-        }
-    }
-
     /**
      * Regenerate source records after polish by matching polished item names to recipe ingredients.
      * This is necessary because polish deletes old items (cascade-deleting sources) and creates new ones.
@@ -622,115 +576,6 @@ class ShoppingRepositoryImpl @Inject constructor(
 
     override suspend fun clearAll() = withContext(Dispatchers.IO) {
         shoppingDao.deleteAll()
-    }
-
-    override suspend fun categorizeForPantry(items: List<ShoppingItem>): Result<List<CategorizedPantryItemDto>> =
-        withContext(Dispatchers.IO) {
-            try {
-                android.util.Log.d("ShoppingRepo", "Categorizing ${items.size} items for pantry")
-
-                if (items.isEmpty()) {
-                    return@withContext Result.success(emptyList())
-                }
-
-                // Convert shopping items to request format
-                val request = PantryCategorizeRequest(
-                    items = items.map { item ->
-                        ShoppingItemForPantryDto(
-                            id = item.id,
-                            name = item.name,
-                            polishedDisplayQuantity = item.polishedDisplayQuantity ?: "${item.quantity} ${item.unit}".trim(),
-                            shoppingCategory = item.category
-                        )
-                    }
-                )
-
-                // Start async categorization job
-                android.util.Log.d("ShoppingRepo", "Starting async pantry categorize job...")
-                val startResponse = mealPlanApi.startPantryCategorize(request)
-                val jobId = startResponse.jobId
-                android.util.Log.d("ShoppingRepo", "Pantry categorize job started: $jobId")
-
-                // Persist job to DB so we can resume if app goes to background
-                pendingJobDao.insert(PendingJobEntity(
-                    jobId = jobId,
-                    jobType = PendingJobType.PANTRY_CATEGORIZE,
-                    relatedId = 0  // No specific related ID for categorization
-                ))
-
-                // Poll for completion
-                val result = pollForCategorizeResult(jobId)
-
-                // Clear pending job from DB
-                pendingJobDao.delete(jobId)
-
-                android.util.Log.d("ShoppingRepo", "Categorization complete: ${result.size} items")
-                Result.success(result)
-            } catch (e: Exception) {
-                android.util.Log.e("ShoppingRepo", "Categorization failed: ${e.message}", e)
-                // Clear pending job from DB on failure
-                pendingJobDao.getByType(PendingJobType.PANTRY_CATEGORIZE)?.let {
-                    pendingJobDao.delete(it.jobId)
-                }
-                Result.failure(e)
-            }
-        }
-
-    /**
-     * Poll for categorize job completion. Returns the result or throws on failure.
-     */
-    private suspend fun pollForCategorizeResult(jobId: String): List<CategorizedPantryItemDto> {
-        var pollCount = 0
-        val maxPolls = 60  // 60 seconds timeout
-        while (pollCount < maxPolls) {
-            kotlinx.coroutines.delay(1000)  // Poll every second
-            pollCount++
-
-            val status = mealPlanApi.getPantryCategorizeJobStatus(jobId)
-            android.util.Log.d("ShoppingRepo", "Categorize poll $pollCount: status=${status.status}")
-            when (status.status) {
-                "completed" -> {
-                    // Clean up the job on backend
-                    try { mealPlanApi.deletePantryCategorizeJob(jobId) } catch (_: Exception) {}
-                    return status.result?.items
-                        ?: throw Exception("Job completed but no result")
-                }
-                "failed" -> {
-                    // Clean up the job on backend
-                    try { mealPlanApi.deletePantryCategorizeJob(jobId) } catch (_: Exception) {}
-                    throw Exception(status.error ?: "Categorize job failed")
-                }
-                // "pending", "running" - continue polling
-            }
-        }
-        // Timeout
-        try { mealPlanApi.deletePantryCategorizeJob(jobId) } catch (_: Exception) {}
-        throw Exception("Categorization timed out after ${maxPolls}s")
-    }
-
-    /**
-     * Check if there's a pending categorize job and resume polling if so.
-     * Call this when app resumes from background.
-     */
-    override suspend fun checkAndResumePendingCategorize(): Result<List<CategorizedPantryItemDto>>? = withContext(Dispatchers.IO) {
-        val pendingJob = pendingJobDao.getByType(PendingJobType.PANTRY_CATEGORIZE) ?: return@withContext null
-        val jobId = pendingJob.jobId
-
-        android.util.Log.d("ShoppingRepo", "Resuming pending categorize job: $jobId")
-
-        try {
-            val result = pollForCategorizeResult(jobId)
-            android.util.Log.d("ShoppingRepo", "Resumed categorize complete: ${result.size} items")
-
-            // Clear pending job from DB
-            pendingJobDao.delete(jobId)
-
-            Result.success(result)
-        } catch (e: Exception) {
-            android.util.Log.e("ShoppingRepo", "Resume categorize failed: ${e.message}", e)
-            pendingJobDao.delete(jobId)
-            Result.failure(e)
-        }
     }
 
     /**

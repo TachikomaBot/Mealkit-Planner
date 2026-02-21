@@ -8,7 +8,6 @@ import com.mealplanner.data.remote.api.RecipeApi
 import com.mealplanner.data.remote.dto.CookingStepDto
 import com.mealplanner.data.remote.dto.GeneratedRecipeDto
 import com.mealplanner.data.remote.dto.MealPlanRequest
-import com.mealplanner.data.remote.dto.PantryItemDto
 import com.mealplanner.data.remote.dto.PreferencesDto
 import com.mealplanner.data.remote.dto.RecipeDto
 import com.mealplanner.data.remote.dto.RecipeIngredientDto
@@ -16,11 +15,9 @@ import com.mealplanner.domain.model.CookingStep
 import com.mealplanner.domain.model.GeneratedMealPlan
 import com.mealplanner.domain.model.GenerationPhase
 import com.mealplanner.domain.model.GenerationProgress
-import com.mealplanner.domain.model.PantryItem
 import com.mealplanner.domain.model.Recipe
 import com.mealplanner.domain.model.RecipeIngredient
 import com.mealplanner.domain.model.RecipeSearchResult
-import com.mealplanner.domain.model.TrackingStyle
 import com.mealplanner.domain.model.UserPreferences
 import com.mealplanner.domain.repository.GenerationResult
 import com.mealplanner.domain.repository.RecipeRepository
@@ -94,8 +91,8 @@ class RecipeRepositoryImpl @Inject constructor(
 
     override fun generateMealPlan(
         preferences: UserPreferences,
-        pantryItems: List<PantryItem>,
-        recentRecipeHashes: List<String>
+        recentRecipeHashes: List<String>,
+        leftoversInput: String
     ): Flow<GenerationResult> = flow {
         // API key is handled by backend
         
@@ -114,7 +111,7 @@ class RecipeRepositoryImpl @Inject constructor(
         try {
             // Start the async job
             val request = MealPlanRequest(
-                pantryItems = pantryItems.map { it.toPantryItemDto() },
+                leftoversInput = leftoversInput,
                 preferences = PreferencesDto(
                     likes = preferences.likes,
                     dislikes = preferences.dislikes,
@@ -297,25 +294,6 @@ class RecipeRepositoryImpl @Inject constructor(
         title = title,
         substeps = substeps
     )
-
-    /**
-     * Convert PantryItem to DTO based on its tracking style.
-     * - STOCK_LEVEL: Send availability level (e.g., "plenty", "some", "low")
-     * - UNITS: Send count and unit (e.g., quantity=4, unit="units")
-     */
-    private fun PantryItem.toPantryItemDto(): PantryItemDto {
-        return when (trackingStyle) {
-            TrackingStyle.STOCK_LEVEL -> PantryItemDto(
-                name = name,
-                availability = effectiveStockLevel.displayName.lowercase()
-            )
-            TrackingStyle.UNITS -> PantryItemDto(
-                name = name,
-                quantity = quantityRemaining.toLong().toDouble(), // Round to whole number
-                unit = unit.displayName
-            )
-        }
-    }
 
     /**
      * Check if there's a pending meal generation job and resume polling if so.

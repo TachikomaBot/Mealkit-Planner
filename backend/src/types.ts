@@ -70,7 +70,7 @@ export interface CookingStep {
 }
 
 export interface MealPlanRequest {
-  pantryItems: PantryItem[];
+  leftoversInput?: string;
   preferences: UserPreferences | null;
   recentRecipeHashes: string[];
   numDays?: number;

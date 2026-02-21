@@ -1,6 +1,5 @@
 package com.mealplanner.domain.repository
 
-import com.mealplanner.data.remote.dto.CategorizedPantryItemDto
 import com.mealplanner.domain.model.IngredientSource
 import com.mealplanner.domain.model.ModifiedIngredient
 import com.mealplanner.domain.model.RecipeIngredient
@@ -86,12 +85,6 @@ interface ShoppingRepository {
     suspend fun clearAll()
 
     /**
-     * Use AI to categorize checked shopping items for pantry storage.
-     * Returns categorized items with proper pantry categories, tracking styles, and expiry dates.
-     */
-    suspend fun categorizeForPantry(items: List<ShoppingItem>): Result<List<CategorizedPantryItemDto>>
-
-    /**
      * Get source recipe information for shopping items in a meal plan.
      * Returns a map of shopping item ID to list of recipe sources.
      * Used to propagate ingredient substitutions back to recipes.
@@ -110,13 +103,6 @@ interface ShoppingRepository {
      * @return Result with polished shopping list, or null if no pending job
      */
     suspend fun checkAndResumePendingPolish(): Result<ShoppingList>?
-
-    /**
-     * Check if there's a pending categorize job and resume polling if so.
-     * Call this when app resumes from background.
-     * @return Result with categorized items, or null if no pending job
-     */
-    suspend fun checkAndResumePendingCategorize(): Result<List<CategorizedPantryItemDto>>?
 
     /**
      * Clean up stale pending jobs older than 1 hour.

@@ -1,11 +1,9 @@
 package com.mealplanner.domain.usecase
 
 import com.mealplanner.domain.model.GeneratedMealPlan
-import com.mealplanner.domain.model.GenerationProgress
 import com.mealplanner.domain.model.Recipe
 import com.mealplanner.domain.repository.GenerationResult
 import com.mealplanner.domain.repository.MealPlanRepository
-import com.mealplanner.domain.repository.PantryRepository
 import com.mealplanner.domain.repository.RecipeRepository
 import com.mealplanner.domain.repository.UserRepository
 import kotlinx.coroutines.flow.Flow
@@ -18,14 +16,13 @@ import javax.inject.Inject
 class GenerateMealPlanUseCase @Inject constructor(
     private val recipeRepository: RecipeRepository,
     private val mealPlanRepository: MealPlanRepository,
-    private val pantryRepository: PantryRepository,
     private val userRepository: UserRepository
 ) {
     /**
      * Generate a meal plan using AI.
      * Returns a Flow of progress updates and final result.
      */
-    fun generateWithAI(): Flow<GenerationResult> {
+    fun generateWithAI(leftoversInput: String = ""): Flow<GenerationResult> {
         return kotlinx.coroutines.flow.flow {
             // Get user preferences
             val preferences = userRepository.getPreferences()
@@ -35,14 +32,11 @@ class GenerateMealPlanUseCase @Inject constructor(
                 return@flow
             }
 
-            // Get pantry items to consider for meal planning
-            val pantryItems = pantryRepository.getAllItems()
-
             // Get recent recipe hashes to avoid repetition
             val recentHashes = mealPlanRepository.getRecentRecipeHashes(weeksBack = 3)
 
             // Delegate to repository which handles SSE streaming
-            recipeRepository.generateMealPlan(preferences, pantryItems, recentHashes)
+            recipeRepository.generateMealPlan(preferences, recentHashes, leftoversInput)
                 .collect { result ->
                     emit(result)
                 }

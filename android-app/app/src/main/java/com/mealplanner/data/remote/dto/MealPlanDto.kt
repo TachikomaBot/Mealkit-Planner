@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class MealPlanRequest(
-    val pantryItems: List<PantryItemDto> = emptyList(),
+    val leftoversInput: String = "",
     val preferences: PreferencesDto? = null,
     val recentRecipeHashes: List<String> = emptyList()
 )

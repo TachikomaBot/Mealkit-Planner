@@ -1,5 +1,7 @@
 package com.mealplanner.presentation.screens.profile
 
+import com.mealplanner.presentation.theme.Sage300
+import com.mealplanner.presentation.theme.Sage400
 import com.mealplanner.presentation.theme.Sage500
 import com.mealplanner.presentation.theme.Sage600
 import com.mealplanner.presentation.theme.Sage700
@@ -32,7 +34,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -41,7 +42,6 @@ import com.mealplanner.domain.model.RecipeHistory
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     viewModel: ProfileViewModel = hiltViewModel()
@@ -52,115 +52,86 @@ fun ProfileScreen(
     val stats by viewModel.stats.collectAsState()
     val mealPlanHistory by viewModel.mealPlanHistory.collectAsState()
     val recipeHistory by viewModel.recipeHistory.collectAsState()
-    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                title = { Text("Profile") },
-                scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Sage600,
-                    scrolledContainerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = androidx.compose.ui.graphics.Color.White
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Sub-tab color: lighter than the nav tab row for a gradient effect
+        val subTabColor = if (isSystemInDarkTheme()) Sage300 else Sage400
+        val onSubTabColor = if (isSystemInDarkTheme()) Color(0xFF1B1B1B) else Color.White
+
+        // Compact sub-tab row (text-only, no icons — distinct from nav tabs above)
+        TabRow(
+            selectedTabIndex = selectedTab.ordinal,
+            containerColor = subTabColor,
+            contentColor = onSubTabColor,
+            indicator = { tabPositions ->
+                TabRowDefaults.Indicator(
+                    Modifier.tabIndicatorOffset(tabPositions[selectedTab.ordinal]),
+                    color = onSubTabColor
                 )
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
+            }
         ) {
-            // Dynamic subheader color: Darker Sage in light mode, Lighter Sage in dark mode
-            val subheaderColor = if (isSystemInDarkTheme()) Sage500 else Sage700
-            val onSubheaderColor = androidx.compose.ui.graphics.Color.White
+            ProfileTab.values().forEach { tab ->
+                Tab(
+                    selected = selectedTab == tab,
+                    onClick = { viewModel.selectTab(tab) },
+                    text = {
+                        Text(
+                            text = when (tab) {
+                                ProfileTab.PREFERENCES -> "Preferences"
+                                ProfileTab.HISTORY -> "History"
+                                ProfileTab.STATS -> "Stats"
+                            },
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    },
+                    selectedContentColor = onSubTabColor,
+                    unselectedContentColor = onSubTabColor.copy(alpha = 0.7f)
+                )
+            }
+        }
 
-            // Tab Row
-            TabRow(
-                selectedTabIndex = selectedTab.ordinal,
-                containerColor = subheaderColor,
-                contentColor = onSubheaderColor,
-                indicator = { tabPositions ->
-                    TabRowDefaults.Indicator(
-                        Modifier.tabIndicatorOffset(tabPositions[selectedTab.ordinal]),
-                        color = onSubheaderColor
-                    )
-                }
-            ) {
-                ProfileTab.values().forEach { tab ->
-                    Tab(
-                        selected = selectedTab == tab,
-                        onClick = { viewModel.selectTab(tab) },
-                        text = {
-                            Text(
-                                text = when (tab) {
-                                    ProfileTab.PREFERENCES -> "Preferences"
-                                    ProfileTab.HISTORY -> "History"
-                                    ProfileTab.STATS -> "Stats"
-                                }
-                            )
-                        },
-                        icon = {
-                            Icon(
-                                imageVector = when (tab) {
-                                    ProfileTab.PREFERENCES -> Icons.Default.Settings
-                                    ProfileTab.HISTORY -> Icons.Default.History
-                                    ProfileTab.STATS -> Icons.AutoMirrored.Filled.TrendingUp
-                                },
-                                contentDescription = null
-                            )
-                        },
-                        selectedContentColor = onSubheaderColor,
-                        unselectedContentColor = onSubheaderColor.copy(alpha = 0.7f)
-                    )
-                }
+        // Tab Content
+        Box(modifier = Modifier.fillMaxSize()) {
+            when (selectedTab) {
+                ProfileTab.PREFERENCES -> PreferencesTabContent(
+                    servings = preferences.targetServings,
+                    likes = preferences.likes,
+                    dislikes = preferences.dislikes,
+                    isDarkMode = preferences.isDarkMode,
+                    onServingsChange = { viewModel.updateTargetServings(it) },
+                    onAddLike = { viewModel.addLike(it) },
+                    onRemoveLike = { viewModel.removeLike(it) },
+                    onAddDislike = { viewModel.addDislike(it) },
+                    onRemoveDislike = { viewModel.removeDislike(it) },
+                    onThemeChanged = { viewModel.toggleTheme(it) }
+                )
+                ProfileTab.HISTORY -> HistoryTabContent(
+                    mealPlanHistory = mealPlanHistory,
+                    recipeHistory = recipeHistory
+                )
+                ProfileTab.STATS -> StatsTabContent(stats = stats)
             }
 
-            // Tab Content
-            Box(modifier = Modifier.fillMaxSize()) {
-                when (selectedTab) {
-                    ProfileTab.PREFERENCES -> PreferencesTabContent(
-                        servings = preferences.targetServings,
-                        likes = preferences.likes,
-                        dislikes = preferences.dislikes,
-                        isDarkMode = preferences.isDarkMode,
-                        onServingsChange = { viewModel.updateTargetServings(it) },
-                        onAddLike = { viewModel.addLike(it) },
-                        onRemoveLike = { viewModel.removeLike(it) },
-                        onAddDislike = { viewModel.addDislike(it) },
-                        onRemoveDislike = { viewModel.removeDislike(it) },
-                        onThemeChanged = { viewModel.toggleTheme(it) }
-                    )
-                    ProfileTab.HISTORY -> HistoryTabContent(
-                        mealPlanHistory = mealPlanHistory,
-                        recipeHistory = recipeHistory
-                    )
-                    ProfileTab.STATS -> StatsTabContent(stats = stats)
-                }
-
-                // Save status snackbar
-                if (saveStatus == SaveStatus.Saved) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(16.dp)
+            // Save status snackbar
+            if (saveStatus == SaveStatus.Saved) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Saved")
-                        }
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Saved")
                     }
                 }
             }

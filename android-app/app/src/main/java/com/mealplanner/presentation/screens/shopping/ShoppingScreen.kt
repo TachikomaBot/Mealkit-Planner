@@ -37,8 +37,6 @@ fun ShoppingScreen(
     val uiState by viewModel.uiState.collectAsState()
     val isShoppingMode by viewModel.isShoppingMode.collectAsState()
     val showAddDialog by viewModel.showAddDialog.collectAsState()
-    val completionState by viewModel.completionState.collectAsState()
-
     val topBarColor by animateColorAsState(
         targetValue = if (isShoppingMode) {
             MaterialTheme.colorScheme.tertiary
@@ -129,8 +127,7 @@ fun ShoppingScreen(
                             groupedItems = state.groupedItems,
                             onItemCheckedChange = { itemId ->
                                 viewModel.toggleItemChecked(itemId)
-                            },
-                            onCompleteTrip = { viewModel.completeShoppingTrip() }
+                            }
                         )
                     } else {
                         ShoppingListContent(
@@ -156,32 +153,6 @@ fun ShoppingScreen(
         )
     }
 
-    // Completion dialog
-    completionState?.let { completion ->
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissCompletion() },
-            icon = {
-                Icon(
-                    Icons.Default.CheckCircle,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(48.dp)
-                )
-            },
-            title = { Text("Shopping Complete!") },
-            text = {
-                Text(
-                    "${completion.itemsAddedToPantry} items have been added to your pantry.",
-                    textAlign = TextAlign.Center
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { viewModel.dismissCompletion() }) {
-                    Text("Done")
-                }
-            }
-        )
-    }
 }
 
 @Composable
@@ -282,8 +253,7 @@ private fun ShoppingListContent(
 private fun ShoppingModeContent(
     shoppingList: com.mealplanner.domain.model.ShoppingList,
     groupedItems: Map<String, List<ShoppingItem>>,
-    onItemCheckedChange: (Long) -> Unit,
-    onCompleteTrip: () -> Unit
+    onItemCheckedChange: (Long) -> Unit
 ) {
     val uncheckedItems = shoppingList.items.filter { !it.checked }
     val checkedItems = shoppingList.items.filter { it.checked }
@@ -360,7 +330,7 @@ private fun ShoppingModeContent(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Tap 'Complete Trip' to add items to your pantry",
+                                text = "You're all set for the week!",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center
@@ -402,24 +372,6 @@ private fun ShoppingModeContent(
             }
         }
 
-        // Complete trip button
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shadowElevation = 8.dp,
-            color = MaterialTheme.colorScheme.surface
-        ) {
-            Button(
-                onClick = onCompleteTrip,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                enabled = checkedItems.isNotEmpty()
-            ) {
-                Icon(Icons.Default.Done, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Complete Trip (${checkedItems.size} items)")
-            }
-        }
     }
 }
 
